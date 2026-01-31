@@ -1,6 +1,5 @@
 streamlit
-openai
 pandas
-python-dotenv
-gTTS
 openpyxl
+openai
+gTTS
