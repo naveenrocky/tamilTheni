@@ -8,22 +8,24 @@ import base64
 from openai import OpenAI
 from gtts import gTTS
 
-# --- CONFIGURATION & SECRETS ---
+# --- 1. CONFIGURATION & SECRETS ---
+# Ensure these are in Streamlit Cloud -> Settings -> Secrets
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 APP_PASSWORD = st.secrets["STREAMLIT_PASSWORD"]
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
+# Repo paths
 IMAGE_PATH = "images" 
 EXCEL_FILE_NAME = "TT2026-Word-List-Theni-1_2_3_4_Extracted.xlsx"
-EXCEL_FULL_PATH = EXCEL_FILE_NAME 
 
 st.set_page_config(page_title="Tamil Theni AI", page_icon="🐘", layout="wide")
 
-# --- SECURITY ---
+# --- 2. SECURITY: Password Protection ---
 def check_password():
     if st.session_state.get("password_correct", False):
         return True
+
     st.title("🔐 Tamil Theni Private Access")
     pwd = st.text_input("Enter Access Password", type="password")
     if st.button("Sign In"):
@@ -37,18 +39,21 @@ def check_password():
 if not check_password():
     st.stop()
 
-# --- DATA LOADING ---
+# --- 3. DATA LOADING LOGIC ---
 @st.cache_data
 def load_vocabulary(file_path):
+    # Hardcoded fallback list in case Excel is missing or has no matches
+    fallback_vocab = ["elephant", "apple", "banana", "cat", "dog", "ant", "ball", "car", "egg", "fish"]
+    
+    if not os.path.exists(file_path):
+        return fallback_vocab
     try:
-        if not os.path.exists(file_path):
-            # FALLBACK: If Excel is missing, use these hardcoded words
-            return ["apple", "banana", "cat", "dog", "elephant", "frog"]
         df = pd.read_excel(file_path, engine='openpyxl')
         all_words = df.iloc[:, [1, 6]].values.flatten()
-        return list(set([str(w).strip().lower() for w in all_words if len(str(w)) > 2]))
+        extracted = list(set([str(w).strip().lower() for w in all_words if len(str(w)) > 2]))
+        return extracted if len(extracted) > 0 else fallback_vocab
     except Exception as e:
-        return ["apple", "elephant"] # Emergency fallback
+        return fallback_vocab
 
 def get_ai_pairing(valid_names):
     sample = random.sample(valid_names, min(len(valid_names), 30))
@@ -74,11 +79,31 @@ def speak_tamil(text):
         st.markdown(f'<audio autoplay="true"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>', unsafe_allow_html=True)
     except: pass
 
-# --- APP UI ---
+# --- 4. FILE SYSTEM SYNC ---
+if not os.path.exists(IMAGE_PATH):
+    st.error(f"❌ Folder '{IMAGE_PATH}' not found in the repository root.")
+    st.stop()
+
+# Build the map: { "elephant": "Elephant.png" }
+all_files = [f for f in os.listdir(IMAGE_PATH) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+image_map = {os.path.splitext(f)[0].strip().lower(): f for f in all_files}
+
+# Load Vocab and filter for existing images
+vocab = load_vocabulary(EXCEL_FILE_NAME)
+valid_names = [v for v in vocab if v in image_map]
+
+# Sidebar Debugging
+with st.sidebar:
+    st.title("🐘 System Status")
+    with st.expander("🛠 Developer Logs"):
+        st.write(f"Files in /images: {len(all_files)}")
+        st.write(f"Matches found: {len(valid_names)}")
+        st.write("Image Keys:", list(image_map.keys()))
+
+# --- 5. APP UI ---
 if "running" not in st.session_state: 
     st.session_state.running = False
 
-st.sidebar.title("🐘 Settings")
 if st.session_state.running:
     if st.sidebar.button("⏹ Stop Practice"):
         st.session_state.running = False
@@ -86,64 +111,44 @@ if st.session_state.running:
 
 if not st.session_state.running:
     st.title("🐘 Tamil Theni Flashcards")
-    st.write("App is ready. Click start to begin.")
-    if st.button("🚀 Start Lesson"):
+    st.success(f"System Ready: {len(valid_names)} images mapped successfully.")
+    if st.button("🚀 Start Practice"):
         st.session_state.running = True
         st.rerun()
 else:
-    if not os.path.exists(IMAGE_PATH):
-        st.error(f"The folder '{IMAGE_PATH}' was not found.")
-        st.stop()
-        
-    all_files = [f for f in os.listdir(IMAGE_PATH) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-    image_map = {os.path.splitext(f)[0].lower(): f for f in all_files}
-    #vocab = load_vocabulary(EXCEL_FULL_PATH)
-    
-    # To this (Hardcoded):
-    vocab = ["nose.png", "teeth.png", "neck.png","mom.png", "leg.png", "head.png",  "ear.png", 
-             "fingers.png", "hand.png", "body.png", "eye.png"]
-    
-    
-    # CRITICAL: valid_names are only words that HAVE an image file
-    valid_names = [v for v in vocab if v in image_map]
-
     if len(valid_names) < 2:
-        st.error("Not enough images found in the 'images' folder to start.")
+        st.error("Not enough matching images found. Check the sidebar logs.")
         st.stop()
 
     display = st.empty()
-    
     while st.session_state.running:
-        # Get pairing and check if words actually exist in our images
         ai_result = get_ai_pairing(valid_names)
         
         if ai_result:
             w1, w2, sentence = [s.strip().lower() for s in ai_result]
             
-            # THE KEY FIX: Check if both words are in our image_map 
+            # Double check keys exist to prevent KeyError
             if w1 in image_map and w2 in image_map:
-                
-                # 8s Timer Loop
+                # 8s Preview
                 for i in range(8, 0, -1):
                     with display.container():
                         st.write(f"### Next pair in {i}s...")
                         c1, c2 = st.columns(2)
                         c1.image(os.path.join(IMAGE_PATH, image_map[w1]), use_container_width=True)
-                        c1.markdown(f"<h3 style='text-align:center;'>{w1.upper()}</h3>", unsafe_allow_html=True)
+                        c1.markdown(f"<h2 style='text-align:center;'>{w1.upper()}</h2>", unsafe_allow_html=True)
                         c2.image(os.path.join(IMAGE_PATH, image_map[w2]), use_container_width=True)
-                        c2.markdown(f"<h3 style='text-align:center;'>{w2.upper()}</h3>", unsafe_allow_html=True)
+                        c2.markdown(f"<h2 style='text-align:center;'>{w2.upper()}</h2>", unsafe_allow_html=True)
                     time.sleep(1)
 
                 # 4s Audio Lesson
                 with display.container():
-                    st.markdown(f"<div style='background:#fdfd96; padding:20px; border-radius:15px; text-align:center;'><h1>{sentence}</h1></div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='background:#fdfd96; padding:30px; border-radius:15px; text-align:center;'><h1>{sentence}</h1></div>", unsafe_allow_html=True)
                     c1, c2 = st.columns(2)
                     c1.image(os.path.join(IMAGE_PATH, image_map[w1]), use_container_width=True)
                     c2.image(os.path.join(IMAGE_PATH, image_map[w2]), use_container_width=True)
                     speak_tamil(sentence)
                 time.sleep(4)
             else:
-                # If AI picked a word we don't have, skip and try again immediately
                 continue
         else:
             time.sleep(1)
