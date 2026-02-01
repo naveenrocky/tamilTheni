@@ -79,11 +79,11 @@ def get_ai_pairing(valid_names):
     sample = random.sample(valid_names, min(len(valid_names), 30))
     if len(sample) < 2:
         return None
-    prompt = f"Pick 2 related words from {sample} that belong to similar categories (e.g., body parts, animals, colors, food, vehicles, nature, etc.). Choose words that can logically connect in a simple context for kids. Then, write a simple 4-word Tamil sentence using both words, teaching basic vocabulary or relations in an engaging way for children. Ensure the sentence is grammatically correct and easy to understand. Format: word1 | word2 | sentence"
+    prompt = f"Pick 2 related words from {sample}. They can be from the same category (e.g., body parts, animals, colors, food, vehicles, nature) or from different categories as long as they logically connect in a kids' context (e.g., animal and food, body part and action). Choose words that can form an engaging relation. Then, write a simple 4-word Tamil sentence using both words, teaching basic vocabulary or relations in an engaging way for children. Ensure the sentence is grammatically correct and easy to understand. Format: word1 | word2 | sentence"
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "system", "content": "You are a Tamil teacher for kids. Always pick similar category words and use pipe | separator."},
+            messages=[{"role": "system", "content": "You are a Tamil teacher for kids. Pick related words within or across categories and use pipe | separator."},
                       {"role": "user", "content": prompt}],
             timeout=10
         )
@@ -268,9 +268,9 @@ else:
         if st.session_state.paused:
             st.rerun()  # Handle pause
         
-        # PHASE 2: Stateful 5-second Audio Lesson
+        # PHASE 2: Stateful 8-second Audio Lesson
         st.session_state.phase = "audio"
-        st.session_state.countdown = 5
+        st.session_state.countdown = 8
         
         with card_placeholder.container():
             st.markdown(f"""
