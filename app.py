@@ -100,8 +100,8 @@ else:
     #vocab = load_vocabulary(EXCEL_FULL_PATH)
     
     # To this (Hardcoded):
-    vocab = ["older_sister.png", "nose.png", "older_brother.png", "teeth.png", "neck.png","mom.png", "leg.png", "head.png", "dad.png", "ear.png", 
-             "fingers.png", "hand.png", "body.png", "eyes.png"]
+    vocab = ["nose.png", "teeth.png", "neck.png","mom.png", "leg.png", "head.png",  "ear.png", 
+             "fingers.png", "hand.png", "body.png", "eye.png"]
     
     
     # CRITICAL: valid_names are only words that HAVE an image file
