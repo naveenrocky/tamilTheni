@@ -241,14 +241,14 @@ else:
         img1_bytes = load_image_as_bytes(img1_path)
         img2_bytes = load_image_as_bytes(img2_path)
         
-        # PHASE 1: Stateful 15-second Preview
+        # PHASE 1: Stateful 8-second Preview (question time)
         if "phase" not in st.session_state or st.session_state.phase != "preview":
             st.session_state.phase = "preview"
-            st.session_state.countdown = 15
+            st.session_state.countdown = 8
         
         while st.session_state.countdown > 0 and not st.session_state.paused:
             with card_placeholder.container():
-                st.markdown(f"<h3 style='text-align: center;'>Next Lesson in {st.session_state.countdown}s...</h3>", unsafe_allow_html=True)
+                st.markdown(f"<h3 style='text-align: center;'>Think and Answer in {st.session_state.countdown}s...</h3>", unsafe_allow_html=True)
                 col1, col2 = st.columns(2)
                 
                 if img1_bytes:
@@ -268,7 +268,7 @@ else:
         if st.session_state.paused:
             st.rerun()  # Handle pause
         
-        # PHASE 2: Stateful 8-second Audio Lesson
+        # PHASE 2: Stateful 8-second Audio Lesson (reveal answer)
         st.session_state.phase = "audio"
         st.session_state.countdown = 8
         
