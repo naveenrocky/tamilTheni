@@ -43,7 +43,7 @@ if not check_password():
 @st.cache_data
 def load_vocabulary(file_path):
     # Hardcoded fallback list in case Excel is missing or has no matches
-    fallback_vocab = ["elephant", "apple", "banana", "cat", "dog", "ant", "ball", "car", "egg", "fish"]
+    fallback_vocab = ["nose", "ear", "hair", "thigh", "head", "hand", "tongue", "neck", "leg", "lip"]
     
     if not os.path.exists(file_path):
         return fallback_vocab
