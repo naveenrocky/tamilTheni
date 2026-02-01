@@ -97,7 +97,12 @@ else:
         
     all_files = [f for f in os.listdir(IMAGE_PATH) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
     image_map = {os.path.splitext(f)[0].lower(): f for f in all_files}
-    vocab = load_vocabulary(EXCEL_FULL_PATH)
+    #vocab = load_vocabulary(EXCEL_FULL_PATH)
+    
+    # To this (Hardcoded):
+    vocab = ["older_sister.png", "nose.png", "older_brother.png", "teeth.png", "neck.png","mom.png", "leg.png", "head.png", "dad.png", "ear.png", 
+             "fingers.png", "hand.png", "body.png", "eyes.png"]
+    
     
     # CRITICAL: valid_names are only words that HAVE an image file
     valid_names = [v for v in vocab if v in image_map]
