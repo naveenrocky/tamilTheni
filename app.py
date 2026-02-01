@@ -5,7 +5,6 @@ import time
 import os
 import hmac
 import base64
-import re
 from openai import OpenAI
 from gtts import gTTS
 import logging
@@ -21,9 +20,23 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Ensure folder names match your GitHub repo exactly
 IMAGE_PATH = "images" 
-EXCEL_FILE_NAME = "Tamil_Theni_Page1.xlsx"
+EXCEL_FILE_NAME = "TT2026-Word-List-Theni-1_2_3_4 conv.xlsx"
 
-st.set_page_config(page_title="Tamil Theni AI", page_icon="🐘", layout="wide")
+st.set_page_config(page_title="Tamil Theni - Level 2", page_icon="🐘", layout="wide")
+
+# Custom CSS for clear Tamil fonts
+st.markdown("""
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;700&display=swap');
+        body, h1, h2, h3, p, div {
+            font-family: 'Noto Sans Tamil', sans-serif !important;
+            color: #333;
+        }
+        .stMarkdown h1 {
+            font-size: 60px !important;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
 # --- 2. SECURITY ---
 def check_password():
@@ -66,11 +79,11 @@ def get_ai_pairing(valid_names):
     sample = random.sample(valid_names, min(len(valid_names), 30))
     if len(sample) < 2:
         return None
-    prompt = f"Pick 2 related words from {sample}. Write a simple 4-word Tamil sentence for kids. Format: word1 | word2 | sentence"
+    prompt = f"Pick 2 related words from {sample} that belong to similar categories (e.g., body parts, animals, colors, food, vehicles, nature, etc.). Choose words that can logically connect in a simple context for kids. Then, write a simple 4-word Tamil sentence using both words, teaching basic vocabulary or relations in an engaging way for children. Ensure the sentence is grammatically correct and easy to understand. Format: word1 | word2 | sentence"
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "system", "content": "You are a Tamil teacher. Use pipe | separator."},
+            messages=[{"role": "system", "content": "You are a Tamil teacher for kids. Always pick similar category words and use pipe | separator."},
                       {"role": "user", "content": prompt}],
             timeout=10
         )
@@ -144,52 +157,65 @@ if len(valid_names) == 0:
     st.stop()
 
 # --- 5. UI & LESSON LOOP ---
-if "running" not in st.session_state: 
+if "running" not in st.session_state:
     st.session_state.running = False
+if "paused" not in st.session_state:
+    st.session_state.paused = False
 if "retry_count" not in st.session_state:
     st.session_state.retry_count = 0
+if "pair_count" not in st.session_state:
+    st.session_state.pair_count = 0
+if "session_valid_names" not in st.session_state:
+    st.session_state.session_valid_names = []
 
 with st.sidebar:
     st.title("🐘 Tamil Theni Settings")
+    st.write(f"Total Images Linked: {len(valid_names)}")
     if st.session_state.running:
         if st.button("⏹ Stop Practice"):
             st.session_state.running = False
+            st.session_state.paused = False
             st.session_state.retry_count = 0
+            st.session_state.pair_count = 0
+            st.session_state.session_valid_names = []
             st.rerun()
-    st.write(f"Total Images Linked: {len(valid_names)}")
-    with st.expander("Show Detected Files"):
-        st.write(list(image_map.keys()))
+        if not st.session_state.paused:
+            if st.button("⏸ Pause Practice"):
+                st.session_state.paused = True
+                st.rerun()
+        else:
+            if st.button("▶ Resume Practice"):
+                st.session_state.paused = False
+                st.rerun()
 
 if not st.session_state.running:
-    st.title("🐘 Tamil Theni AI Flashcards")
-    st.info("AI will generate logical Tamil sentences based on your uploaded images.")
-
-    # New: Image Preview Section for Debugging
-    st.header("Image Preview (Debug: Check if Images Load)")
-    if len(valid_names) > 0:
-        cols = st.columns(3)
-        for i, name in enumerate(valid_names):
-            with cols[i % 3]:
-                img_path = os.path.join(IMAGE_PATH, image_map[name])
-                img_bytes = load_image_as_bytes(img_path)
-                if img_bytes:
-                    st.image(img_bytes, caption=name.upper(), use_container_width=True)
-                else:
-                    st.text(f"Image not found: {name}")
-    else:
-        st.warning("No images to preview.")
-
+    st.title("🐘 Tamil Theni - Level 2")
     if len(valid_names) < 2:
         st.error("Need at least 2 images or vocabulary words to start practice. Please add more to the 'images' folder or check your Excel file.")
     else:
         if st.button("🚀 Start 15s Practice"):
             st.session_state.running = True
+            st.session_state.paused = False
             st.session_state.retry_count = 0
+            st.session_state.pair_count = 0
+            st.session_state.session_valid_names = random.sample(valid_names, len(valid_names))  # Shuffle for randomness
             st.rerun()
 else:
+    if st.session_state.paused:
+        st.title("🐘 Tamil Theni - Level 2")
+        st.info("Practice Paused. Use sidebar to resume or stop.")
+        st.stop()
+
+    if st.session_state.pair_count >= 20:
+        st.session_state.running = False
+        st.session_state.pair_count = 0
+        st.session_state.session_valid_names = []
+        st.success("Completed 20 sets! Start a new practice.")
+        st.rerun()
+
     # Get AI Result
     with st.spinner("AI is pairing items..."):
-        ai_result = get_ai_pairing(valid_names)
+        ai_result = get_ai_pairing(st.session_state.session_valid_names)
 
     if ai_result:
         st.session_state.retry_count = 0  # Reset on success
@@ -200,20 +226,30 @@ else:
             logging.warning(f"AI selected non-existent images: {w1}, {w2}")
             st.rerun()  # Rerun if mismatch
         
+        # Remove used words for no repetition in session
+        if w1 in st.session_state.session_valid_names:
+            st.session_state.session_valid_names.remove(w1)
+        if w2 in st.session_state.session_valid_names:
+            st.session_state.session_valid_names.remove(w2)
+        
         card_placeholder = st.empty()
-            
-        # PHASE 1: 15-second Preview (with countdown)
-        for i in range(15, 0, -1):
+        
+        # Load images as bytes once
+        img1_path = os.path.join(IMAGE_PATH, image_map[w1])
+        img2_path = os.path.join(IMAGE_PATH, image_map[w2])
+        img1_bytes = load_image_as_bytes(img1_path)
+        img2_bytes = load_image_as_bytes(img2_path)
+        
+        # PHASE 1: Stateful 15-second Preview
+        if "phase" not in st.session_state or st.session_state.phase != "preview":
+            st.session_state.phase = "preview"
+            st.session_state.countdown = 15
+        
+        while st.session_state.countdown > 0 and not st.session_state.paused:
             with card_placeholder.container():
-                st.markdown(f"<h3 style='text-align: center;'>Next Lesson in {i}s...</h3>", unsafe_allow_html=True)
+                st.markdown(f"<h3 style='text-align: center;'>Next Lesson in {st.session_state.countdown}s...</h3>", unsafe_allow_html=True)
                 col1, col2 = st.columns(2)
-                    
-                # Load images as bytes
-                img1_path = os.path.join(IMAGE_PATH, image_map[w1])
-                img2_path = os.path.join(IMAGE_PATH, image_map[w2])
-                img1_bytes = load_image_as_bytes(img1_path)
-                img2_bytes = load_image_as_bytes(img2_path)
-                    
+                
                 if img1_bytes:
                     col1.image(img1_bytes, caption=w1.upper(), use_container_width=True)
                 else:
@@ -222,18 +258,27 @@ else:
                     col2.image(img2_bytes, caption=w2.upper(), use_container_width=True)
                 else:
                     col2.text(f"Image not found: {w2}")
+            
             time.sleep(1)
-
-        # PHASE 2: 5-second Audio Lesson
+            st.session_state.countdown -= 1
+            if st.session_state.countdown > 0:
+                st.rerun()
+        
+        if st.session_state.paused:
+            st.rerun()  # Handle pause
+        
+        # PHASE 2: Stateful 5-second Audio Lesson
+        st.session_state.phase = "audio"
+        st.session_state.countdown = 5
+        
         with card_placeholder.container():
             st.markdown(f"""
                 <div style='background-color: #fdfd96; padding: 40px; border-radius: 20px; text-align: center; border: 5px solid #FFD700;'>
-                    <h1 style='font-size: 50px; color: #333;'>{sentence}</h1>
+                    <h1 style='font-size: 60px; color: #333;'>{sentence}</h1>
                 </div>
             """, unsafe_allow_html=True)
-                
+            
             col1, col2 = st.columns(2)
-            # Reuse bytes
             if img1_bytes:
                 col1.image(img1_bytes, use_container_width=True)
             else:
@@ -242,16 +287,29 @@ else:
                 col2.image(img2_bytes, use_container_width=True)
             else:
                 col2.text(f"Image not found: {w2}")
-                
-            speak_tamil(sentence)
-            time.sleep(5) # Give time for audio to finish
             
+            speak_tamil(sentence)
+        
+        while st.session_state.countdown > 0 and not st.session_state.paused:
+            time.sleep(1)
+            st.session_state.countdown -= 1
+            if st.session_state.countdown > 0:
+                st.rerun()
+        
+        if st.session_state.paused:
+            st.rerun()  # Handle pause
+        
+        # Increment pair count after full cycle
+        st.session_state.pair_count += 1
+        del st.session_state.phase  # Reset phase
         st.rerun()
     else:
         st.session_state.retry_count += 1
         if st.session_state.retry_count > 10:
             st.session_state.running = False
             st.session_state.retry_count = 0
+            st.session_state.pair_count = 0
+            st.session_state.session_valid_names = []
             st.error("Too many failed attempts to find a valid pair. Please check logs for details, add more images, or verify vocabulary matches image names (without extensions).")
         else:
             st.warning("AI had trouble finding a pair. Retrying...")
