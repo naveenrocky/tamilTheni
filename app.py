@@ -39,6 +39,7 @@ if not check_password():
 # --- 3. DATA LOADING ---
 @st.cache_data
 def load_vocabulary(file_path):
+    # These MUST match the names of your .png files (lowercase)
     fallback_vocab = ["nose", "ear", "hair", "thigh", "head", "hand", "tongue", "neck", "leg", "lip"]
     if not os.path.exists(file_path):
         return fallback_vocab
@@ -51,17 +52,26 @@ def load_vocabulary(file_path):
         return fallback_vocab
 
 def get_ai_pairing(valid_names):
-    sample = random.sample(valid_names, min(len(valid_names), 30))
-    prompt = f"Pick 2 related words from {sample}. Write a simple 4-word Tamil sentence for kids. Format: word1 | word2 | sentence"
+    # We pass the list of ONLY the images we actually have to the AI
+    names_string = ", ".join(valid_names)
+    prompt = f"Choose exactly TWO words from this list: [{names_string}]. Create a simple 4-word Tamil sentence using them. Format: word1 | word2 | sentence"
+    
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "system", "content": "You are a Tamil teacher. Use pipe | separator."}],
+            messages=[
+                {"role": "system", "content": "You are a Tamil teacher. Only use words provided. Use | separator."},
+                {"role": "user", "content": prompt}
+            ],
             timeout=10
         )
-        parts = [p.strip() for p in response.choices[0].message.content.split("|")]
-        return parts if len(parts) == 3 else None
-    except:
+        content = response.choices[0].message.content
+        parts = [p.strip().lower() for p in content.split("|")]
+        if len(parts) == 3:
+            return parts
+        return None
+    except Exception as e:
+        st.sidebar.error(f"AI Error: {e}") # Show the actual error in sidebar
         return None
 
 def speak_tamil(text):
@@ -88,59 +98,57 @@ valid_names = [v for v in vocab if v in image_map]
 if "running" not in st.session_state: 
     st.session_state.running = False
 
-# Sidebar for controls
 with st.sidebar:
-    st.title("🐘 Tamil Theni Controls")
+    st.title("🐘 Status")
     if st.session_state.running:
-        if st.button("⏹ Stop Practice"):
+        if st.button("⏹ Stop"):
             st.session_state.running = False
             st.rerun()
-    st.write(f"Images Mapped: {len(valid_names)}")
+    st.write(f"✅ {len(valid_names)} Images Ready")
+    if len(valid_names) < 2:
+        st.warning("Need at least 2 images to start.")
 
 if not st.session_state.running:
     st.title("🐘 Tamil Theni Flashcards")
-    st.success(f"Ready to start with {len(valid_names)} images.")
     if st.button("🚀 Start Practice"):
         st.session_state.running = True
         st.rerun()
 else:
-    # --- PRACTICING LOGIC ---
-    # Instead of a while loop, we run this block ONCE and then rerun the script.
-    ai_result = get_ai_pairing(valid_names)
-    
-    if ai_result:
-        w1, w2, sentence = [s.strip().lower() for s in ai_result]
-        
-        if w1 in image_map and w2 in image_map:
-            # Container for the current flashcard
-            card_container = st.empty()
-            
-            # Phase 1: 8-second Preview
-            for i in range(8, 0, -1):
-                with card_container.container():
-                    st.write(f"### Next pair in {i}s...")
-                    c1, c2 = st.columns(2)
-                    c1.image(os.path.join(IMAGE_PATH, image_map[w1]), use_container_width=True)
-                    c1.markdown(f"<h2 style='text-align:center;'>{w1.upper()}</h2>", unsafe_allow_html=True)
-                    c2.image(os.path.join(IMAGE_PATH, image_map[w2]), use_container_width=True)
-                    c2.markdown(f"<h2 style='text-align:center;'>{w2.upper()}</h2>", unsafe_allow_html=True)
-                time.sleep(1)
+    # --- LESSON LOOP ---
+    with st.status("🤖 AI is thinking...", expanded=False) as status:
+        ai_result = get_ai_pairing(valid_names)
+        if ai_result:
+            status.update(label="✅ Pair Generated!", state="complete")
+        else:
+            status.update(label="❌ AI Failed. Retrying...", state="error")
+            time.sleep(2)
+            st.rerun()
 
-            # Phase 2: 4-second Lesson
+    w1, w2, sentence = ai_result
+    
+    # Check if AI hallucinated words we don't have
+    if w1 in image_map and w2 in image_map:
+        card_container = st.empty()
+        
+        # Phase 1: 8s Preview
+        for i in range(8, 0, -1):
             with card_container.container():
-                st.markdown(f"<div style='background:#fdfd96; padding:30px; border-radius:15px; text-align:center;'><h1>{sentence}</h1></div>", unsafe_allow_html=True)
+                st.write(f"### Next pair in {i}s...")
                 c1, c2 = st.columns(2)
                 c1.image(os.path.join(IMAGE_PATH, image_map[w1]), use_container_width=True)
+                c1.markdown(f"<h2 style='text-align:center;'>{w1.upper()}</h2>", unsafe_allow_html=True)
                 c2.image(os.path.join(IMAGE_PATH, image_map[w2]), use_container_width=True)
-                speak_tamil(sentence)
-            time.sleep(4)
-            
-            # TRIGGER NEXT LOOP
-            st.rerun()
-        else:
-            # If AI picks a word we don't have, rerun immediately to try again
-            st.rerun()
+                c2.markdown(f"<h2 style='text-align:center;'>{w2.upper()}</h2>", unsafe_allow_html=True)
+            time.sleep(1)
+
+        # Phase 2: 4s Lesson
+        with card_container.container():
+            st.markdown(f"<div style='background:#fdfd96; padding:30px; border-radius:15px; text-align:center;'><h1>{sentence}</h1></div>", unsafe_allow_html=True)
+            c1, c2 = st.columns(2)
+            c1.image(os.path.join(IMAGE_PATH, image_map[w1]), use_container_width=True)
+            c2.image(os.path.join(IMAGE_PATH, image_map[w2]), use_container_width=True)
+            speak_tamil(sentence)
+        time.sleep(4)
+        st.rerun()
     else:
-        st.error("AI was unable to generate a pair. Retrying...")
-        time.sleep(2)
         st.rerun()
