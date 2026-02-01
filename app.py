@@ -41,7 +41,7 @@ if not check_password():
 # --- 3. DATA LOADING ---
 @st.cache_data
 def load_vocabulary(file_path):
-    fallback_vocab = ["nose.png", "ear.png", "hair.png", "thigh.png", "head.png", "hand.png", "tongue.png", "neck.png", "leg.png", "lip.png"]
+    fallback_vocab = ["nose", "ear", "hair", "thigh", "head", "hand", "tongue", "neck", "leg", "lip"]
     if not os.path.exists(file_path):
         return fallback_vocab
     try:
@@ -85,7 +85,8 @@ if not os.path.exists(IMAGE_PATH):
 all_files = [f for f in os.listdir(IMAGE_PATH) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
 image_map = {os.path.splitext(f)[0].strip().lower(): f for f in all_files}
 
-vocab = load_vocabulary(EXCEL_FILE_NAME)
+#vocab = load_vocabulary(EXCEL_FILE_NAME)
+vocab =  ["nose", "ear", "hair", "thigh", "head", "hand", "tongue", "neck", "leg", "lip"]
 valid_names = [v for v in vocab if v in image_map]
 
 # --- 5. UI & LESSON LOOP ---
