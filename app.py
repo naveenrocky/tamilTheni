@@ -11,7 +11,7 @@ from gtts import gTTS
 import logging
 
 # Set up logging
-logging.basicConfig(level=logging.ERROR, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # --- 1. CONFIGURATION & SECRETS ---
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
@@ -53,16 +53,19 @@ def load_vocabulary(file_path):
         df = pd.read_excel(file_path, engine='openpyxl')
         all_words = df.iloc[:, [1, 6]].values.flatten()
         extracted = list(set([str(w).strip().lower() for w in all_words if len(str(w)) > 2]))
+        logging.info(f"Loaded {len(extracted)} words from vocabulary")
         return extracted if len(extracted) > 0 else fallback_vocab
     except Exception as e:
         logging.exception("Error loading vocabulary")
         return fallback_vocab
 
 def get_ai_pairing(valid_names):
-    if not valid_names:
-        logging.warning("No valid names available for AI pairing")
-        return None  # No valid names, can't pair
+    if len(valid_names) < 2:
+        logging.warning("Fewer than 2 valid names available for pairing")
+        return None
     sample = random.sample(valid_names, min(len(valid_names), 30))
+    if len(sample) < 2:
+        return None
     prompt = f"Pick 2 related words from {sample}. Write a simple 4-word Tamil sentence for kids. Format: word1 | word2 | sentence"
     try:
         response = client.chat.completions.create(
@@ -71,11 +74,17 @@ def get_ai_pairing(valid_names):
                       {"role": "user", "content": prompt}],
             timeout=10
         )
-        parts = [p.strip() for p in response.choices[0].message.content.split("|")]
-        return parts if len(parts) == 3 else ["eye", "face", "கண்ணால் முகத்தைப் பார்."]
+        content = response.choices[0].message.content
+        logging.info(f"AI response: {content}")
+        parts = [p.strip() for p in content.split("|")]
+        if len(parts) == 3 and parts[0] in valid_names and parts[1] in valid_names:
+            return parts
+        else:
+            logging.warning("Invalid AI response format or words not in valid names")
+            return None
     except Exception as e:
         logging.exception("Error in AI pairing")
-        return ["eye", "face", "கண்ணால் முகத்தைப் பார்."]
+        return None
 
 def speak_tamil(text):
     try:
@@ -99,6 +108,7 @@ if not os.path.exists(IMAGE_PATH):
 try:
     all_files = [f for f in os.listdir(IMAGE_PATH) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
     image_map = {os.path.splitext(f)[0].strip().lower(): f for f in all_files}
+    logging.info(f"Found {len(all_files)} image files: {all_files}")
 except Exception as e:
     logging.exception("Error listing image files")
     st.error("Error accessing image folder.")
@@ -117,6 +127,7 @@ else:
         st.stop()
 
 valid_names = [v for v in vocab if v in image_map]
+logging.info(f"Valid names for pairing: {valid_names}")
 
 if not valid_names:
     logging.warning("No matching vocabulary words found for the available images. Using image base names as fallback.")
@@ -125,12 +136,15 @@ if not valid_names:
 # --- 5. UI & LESSON LOOP ---
 if "running" not in st.session_state: 
     st.session_state.running = False
+if "retry_count" not in st.session_state:
+    st.session_state.retry_count = 0
 
 with st.sidebar:
     st.title("🐘 Tamil Theni Settings")
     if st.session_state.running:
         if st.button("⏹ Stop Practice"):
             st.session_state.running = False
+            st.session_state.retry_count = 0
             st.rerun()
     st.write(f"Total Images Linked: {len(valid_names)}")
     with st.expander("Show Detected Files"):
@@ -139,15 +153,20 @@ with st.sidebar:
 if not st.session_state.running:
     st.title("🐘 Tamil Theni AI Flashcards")
     st.info("AI will generate logical Tamil sentences based on your uploaded images.")
-    if st.button("🚀 Start 15s Practice"):
-        st.session_state.running = True
-        st.rerun()
+    if len(valid_names) < 2:
+        st.error("Need at least 2 images or vocabulary words to start practice. Please add more to the 'images' folder or check your Excel file.")
+    else:
+        if st.button("🚀 Start 15s Practice"):
+            st.session_state.running = True
+            st.session_state.retry_count = 0
+            st.rerun()
 else:
     # Get AI Result
     with st.spinner("AI is pairing items..."):
         ai_result = get_ai_pairing(valid_names)
 
     if ai_result:
+        st.session_state.retry_count = 0  # Reset on success
         w1, w2, sentence = ai_result
         
         # Verification: Only display if both images truly exist in our map (fallback if AI picks non-existent)
@@ -188,7 +207,12 @@ else:
             
         st.rerun()
     else:
-        st.warning("No valid pairs available. Please add more images or check vocabulary.")
-        time.sleep(2)
-        st.session_state.running = False
-        st.rerun()
+        st.session_state.retry_count += 1
+        if st.session_state.retry_count > 5:
+            st.session_state.running = False
+            st.session_state.retry_count = 0
+            st.error("Too many failed attempts to find a valid pair. Please check logs for details, add more images, or verify vocabulary.")
+        else:
+            st.warning("AI had trouble finding a pair. Retrying...")
+            time.sleep(2)
+            st.rerun()
