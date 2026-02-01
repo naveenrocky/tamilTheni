@@ -9,28 +9,25 @@ from openai import OpenAI
 from gtts import gTTS
 
 # --- CONFIGURATION & SECRETS ---
-# Ensure these are set in Streamlit Cloud -> Settings -> Secrets
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 APP_PASSWORD = st.secrets["STREAMLIT_PASSWORD"]
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# UPDATED PATHS TO MATCH YOUR GITHUB REPO
 IMAGE_PATH = "images" 
 EXCEL_FILE_NAME = "TT2026-Word-List-Theni-1_2_3_4_Extracted.xlsx"
-EXCEL_FULL_PATH = EXCEL_FILE_NAME # Located in the main folder
+EXCEL_FULL_PATH = EXCEL_FILE_NAME 
 
 st.set_page_config(page_title="Tamil Theni AI", page_icon="🐘", layout="wide")
 
-# --- SECURITY: Password Protection ---
+# --- SECURITY ---
 def check_password():
     if st.session_state.get("password_correct", False):
         return True
-
     st.title("🔐 Tamil Theni Private Access")
     pwd = st.text_input("Enter Access Password", type="password")
     if st.button("Sign In"):
-        if hmac.compare_digest(pwd, APP_PASSWORD): # Secure comparison
+        if hmac.compare_digest(pwd, APP_PASSWORD):
             st.session_state["password_correct"] = True
             st.rerun()
         else:
@@ -45,15 +42,13 @@ if not check_password():
 def load_vocabulary(file_path):
     try:
         if not os.path.exists(file_path):
-            st.error(f"Excel file not found at: {file_path}")
-            return []
+            # FALLBACK: If Excel is missing, use these hardcoded words
+            return ["apple", "banana", "cat", "dog", "elephant", "frog"]
         df = pd.read_excel(file_path, engine='openpyxl')
-        # Extracting words from columns 1 and 6 as per your original logic
         all_words = df.iloc[:, [1, 6]].values.flatten()
         return list(set([str(w).strip().lower() for w in all_words if len(str(w)) > 2]))
     except Exception as e:
-        st.error(f"Error loading Excel data: {e}")
-        return []
+        return ["apple", "elephant"] # Emergency fallback
 
 def get_ai_pairing(valid_names):
     sample = random.sample(valid_names, min(len(valid_names), 30))
@@ -65,9 +60,9 @@ def get_ai_pairing(valid_names):
             timeout=10
         )
         parts = [p.strip() for p in response.choices[0].message.content.split("|")]
-        return parts if len(parts) == 3 else ["eye", "face", "கண்ணால் முகத்தைப் பார்."]
+        return parts if len(parts) == 3 else None
     except:
-        return ["eye", "face", "கண்ணால் முகத்தைப் பார்."]
+        return None
 
 def speak_tamil(text):
     try:
@@ -91,44 +86,59 @@ if st.session_state.running:
 
 if not st.session_state.running:
     st.title("🐘 Tamil Theni Flashcards")
+    st.write("App is ready. Click start to begin.")
     if st.button("🚀 Start Lesson"):
         st.session_state.running = True
         st.rerun()
 else:
-    # Validate image directory exists in GitHub repo
     if not os.path.exists(IMAGE_PATH):
-        st.error(f"The folder '{IMAGE_PATH}' was not found. Please ensure it is pushed to GitHub.")
+        st.error(f"The folder '{IMAGE_PATH}' was not found.")
         st.stop()
         
     all_files = [f for f in os.listdir(IMAGE_PATH) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
     image_map = {os.path.splitext(f)[0].lower(): f for f in all_files}
     vocab = load_vocabulary(EXCEL_FULL_PATH)
+    
+    # CRITICAL: valid_names are only words that HAVE an image file
     valid_names = [v for v in vocab if v in image_map]
 
-    if not valid_names:
-        st.error("No matches found between Excel words and image filenames.")
+    if len(valid_names) < 2:
+        st.error("Not enough images found in the 'images' folder to start.")
         st.stop()
 
     display = st.empty()
+    
     while st.session_state.running:
-        w1, w2, sentence = get_ai_pairing(valid_names)
+        # Get pairing and check if words actually exist in our images
+        ai_result = get_ai_pairing(valid_names)
         
-        # 8s Timer Loop
-        for i in range(8, 0, -1):
-            with display.container():
-                st.write(f"### Next pair in {i}s...")
-                c1, c2 = st.columns(2)
-                c1.image(os.path.join(IMAGE_PATH, image_map[w1]), use_container_width=True)
-                c1.markdown(f"<h1 style='text-align:center;'>{w1.upper()}</h1>", unsafe_allow_html=True)
-                c2.image(os.path.join(IMAGE_PATH, image_map[w2]), use_container_width=True)
-                c2.markdown(f"<h1 style='text-align:center;'>{w2.upper()}</h1>", unsafe_allow_html=True)
-            time.sleep(1)
+        if ai_result:
+            w1, w2, sentence = [s.strip().lower() for s in ai_result]
+            
+            # THE KEY FIX: Check if both words are in our image_map 
+            if w1 in image_map and w2 in image_map:
+                
+                # 8s Timer Loop
+                for i in range(8, 0, -1):
+                    with display.container():
+                        st.write(f"### Next pair in {i}s...")
+                        c1, c2 = st.columns(2)
+                        c1.image(os.path.join(IMAGE_PATH, image_map[w1]), use_container_width=True)
+                        c1.markdown(f"<h3 style='text-align:center;'>{w1.upper()}</h3>", unsafe_allow_html=True)
+                        c2.image(os.path.join(IMAGE_PATH, image_map[w2]), use_container_width=True)
+                        c2.markdown(f"<h3 style='text-align:center;'>{w2.upper()}</h3>", unsafe_allow_html=True)
+                    time.sleep(1)
 
-        # 4s Audio Lesson
-        with display.container():
-            st.markdown(f"<div style='background:#fdfd96; padding:20px; border-radius:15px; text-align:center;'><h1>{sentence}</h1></div>", unsafe_allow_html=True)
-            c1, c2 = st.columns(2)
-            c1.image(os.path.join(IMAGE_PATH, image_map[w1]), use_container_width=True)
-            c2.image(os.path.join(IMAGE_PATH, image_map[w2]), use_container_width=True)
-            speak_tamil(sentence)
-        time.sleep(4)
+                # 4s Audio Lesson
+                with display.container():
+                    st.markdown(f"<div style='background:#fdfd96; padding:20px; border-radius:15px; text-align:center;'><h1>{sentence}</h1></div>", unsafe_allow_html=True)
+                    c1, c2 = st.columns(2)
+                    c1.image(os.path.join(IMAGE_PATH, image_map[w1]), use_container_width=True)
+                    c2.image(os.path.join(IMAGE_PATH, image_map[w2]), use_container_width=True)
+                    speak_tamil(sentence)
+                time.sleep(4)
+            else:
+                # If AI picked a word we don't have, skip and try again immediately
+                continue
+        else:
+            time.sleep(1)
