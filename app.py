@@ -130,15 +130,16 @@ if not os.path.exists(IMAGE_PATH):
     st.error(f"Folder '{IMAGE_PATH}' not found. Please check your GitHub repository.")
     st.stop()
 
-# Get all files and map them (handling case sensitivity)
-try:
-    all_files = [f for f in os.listdir(IMAGE_PATH) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-    image_map = {os.path.splitext(f)[0].strip().lower(): f for f in all_files}
-    logging.info(f"Found {len(all_files)} image files: {all_files}")
-except Exception as e:
-    logging.exception("Error listing image files")
-    st.error("Error accessing image folder.")
-    st.stop()
+# Recursively get all image files from subfolders
+image_map = {}
+for root, dirs, files in os.walk(IMAGE_PATH):
+    for f in files:
+        if f.lower().endswith(('.png', '.jpg', '.jpeg')):
+            base_name = os.path.splitext(f)[0].strip().lower()
+            relative_path = os.path.relpath(os.path.join(root, f), IMAGE_PATH)
+            image_map[base_name] = relative_path
+
+logging.info(f"Found {len(image_map)} image files: {list(image_map.values())}")
 
 # Load vocab from Excel if possible, else fallback to image base names
 vocab = list(image_map.keys())  # Start with image names as base
