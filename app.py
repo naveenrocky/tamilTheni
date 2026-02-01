@@ -98,6 +98,19 @@ def speak_tamil(text):
         logging.exception("Error in speech synthesis")
         pass
 
+def load_image_as_bytes(img_path):
+    try:
+        if os.path.exists(img_path):
+            logging.info(f"Loading image: {img_path}")
+            with open(img_path, "rb") as img_file:
+                return img_file.read()
+        else:
+            logging.warning(f"Image path does not exist: {img_path}")
+            return None
+    except Exception as e:
+        logging.exception(f"Error loading image {img_path}")
+        return None
+
 # --- 4. IMAGE SYNCING ---
 if not os.path.exists(IMAGE_PATH):
     logging.error(f"Image folder not found: {IMAGE_PATH}")
@@ -114,24 +127,21 @@ except Exception as e:
     st.error("Error accessing image folder.")
     st.stop()
 
-# Load vocab from Excel if possible, else fallback to image base names for robustness
+# Load vocab from Excel if possible, else fallback to image base names
+vocab = list(image_map.keys())  # Start with image names as base
 if os.path.exists(EXCEL_FILE_NAME):
-    vocab = load_vocabulary(EXCEL_FILE_NAME)
+    excel_vocab = load_vocabulary(EXCEL_FILE_NAME)
+    vocab = list(set(vocab + [v for v in excel_vocab if v in image_map]))  # Merge matching Excel words
 else:
-    logging.warning(f"Excel file not found: {EXCEL_FILE_NAME}. Falling back to image names.")
-    # Fallback to using image file base names as vocabulary
-    vocab = list(image_map.keys())
-    if not vocab:
-        logging.error("No images found in the 'images' folder.")
-        st.error("No images found in the 'images' folder. Please add some images.")
-        st.stop()
+    logging.warning(f"Excel file not found: {EXCEL_FILE_NAME}. Using image names only.")
 
-valid_names = [v for v in vocab if v in image_map]
+valid_names = list(set(vocab))  # Unique
 logging.info(f"Valid names for pairing: {valid_names}")
 
-if not valid_names:
-    logging.warning("No matching vocabulary words found for the available images. Using image base names as fallback.")
-    valid_names = list(image_map.keys())
+if len(valid_names) == 0:
+    logging.error("No valid images or matching vocabulary found.")
+    st.error("No images or matching vocabulary found. Add images to 'images' folder.")
+    st.stop()
 
 # --- 5. UI & LESSON LOOP ---
 if "running" not in st.session_state: 
@@ -153,6 +163,22 @@ with st.sidebar:
 if not st.session_state.running:
     st.title("🐘 Tamil Theni AI Flashcards")
     st.info("AI will generate logical Tamil sentences based on your uploaded images.")
+
+    # New: Image Preview Section for Debugging
+    st.header("Image Preview (Debug: Check if Images Load)")
+    if len(valid_names) > 0:
+        cols = st.columns(3)
+        for i, name in enumerate(valid_names):
+            with cols[i % 3]:
+                img_path = os.path.join(IMAGE_PATH, image_map[name])
+                img_bytes = load_image_as_bytes(img_path)
+                if img_bytes:
+                    st.image(img_bytes, caption=name.upper(), use_container_width=True)
+                else:
+                    st.text(f"Image not found: {name}")
+    else:
+        st.warning("No images to preview.")
+
     if len(valid_names) < 2:
         st.error("Need at least 2 images or vocabulary words to start practice. Please add more to the 'images' folder or check your Excel file.")
     else:
@@ -169,7 +195,7 @@ else:
         st.session_state.retry_count = 0  # Reset on success
         w1, w2, sentence = ai_result
         
-        # Verification: Only display if both images truly exist in our map (fallback if AI picks non-existent)
+        # Verification: Only display if both images truly exist in our map
         if w1 not in image_map or w2 not in image_map:
             logging.warning(f"AI selected non-existent images: {w1}, {w2}")
             st.rerun()  # Rerun if mismatch
@@ -182,12 +208,20 @@ else:
                 st.markdown(f"<h3 style='text-align: center;'>Next Lesson in {i}s...</h3>", unsafe_allow_html=True)
                 col1, col2 = st.columns(2)
                     
-                # Fetching images using the mapped filename to handle case sensitivity
+                # Load images as bytes
                 img1_path = os.path.join(IMAGE_PATH, image_map[w1])
                 img2_path = os.path.join(IMAGE_PATH, image_map[w2])
+                img1_bytes = load_image_as_bytes(img1_path)
+                img2_bytes = load_image_as_bytes(img2_path)
                     
-                col1.image(img1_path, caption=w1.upper(), use_container_width=True)
-                col2.image(img2_path, caption=w2.upper(), use_container_width=True)
+                if img1_bytes:
+                    col1.image(img1_bytes, caption=w1.upper(), use_container_width=True)
+                else:
+                    col1.text(f"Image not found: {w1}")
+                if img2_bytes:
+                    col2.image(img2_bytes, caption=w2.upper(), use_container_width=True)
+                else:
+                    col2.text(f"Image not found: {w2}")
             time.sleep(1)
 
         # PHASE 2: 5-second Audio Lesson
@@ -199,8 +233,15 @@ else:
             """, unsafe_allow_html=True)
                 
             col1, col2 = st.columns(2)
-            col1.image(os.path.join(IMAGE_PATH, image_map[w1]), use_container_width=True)
-            col2.image(os.path.join(IMAGE_PATH, image_map[w2]), use_container_width=True)
+            # Reuse bytes
+            if img1_bytes:
+                col1.image(img1_bytes, use_container_width=True)
+            else:
+                col1.text(f"Image not found: {w1}")
+            if img2_bytes:
+                col2.image(img2_bytes, use_container_width=True)
+            else:
+                col2.text(f"Image not found: {w2}")
                 
             speak_tamil(sentence)
             time.sleep(5) # Give time for audio to finish
@@ -208,10 +249,10 @@ else:
         st.rerun()
     else:
         st.session_state.retry_count += 1
-        if st.session_state.retry_count > 5:
+        if st.session_state.retry_count > 10:
             st.session_state.running = False
             st.session_state.retry_count = 0
-            st.error("Too many failed attempts to find a valid pair. Please check logs for details, add more images, or verify vocabulary.")
+            st.error("Too many failed attempts to find a valid pair. Please check logs for details, add more images, or verify vocabulary matches image names (without extensions).")
         else:
             st.warning("AI had trouble finding a pair. Retrying...")
             time.sleep(2)
