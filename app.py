@@ -5,6 +5,7 @@ import time
 import os
 import hmac
 import base64
+import re
 from openai import OpenAI
 from gtts import gTTS
 
@@ -14,6 +15,7 @@ APP_PASSWORD = st.secrets["STREAMLIT_PASSWORD"]
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
+# Ensure folder names match your GitHub repo exactly
 IMAGE_PATH = "images" 
 EXCEL_FILE_NAME = "TT2026-Word-List-Theni-1_2_3_4_Extracted.xlsx"
 
@@ -39,7 +41,6 @@ if not check_password():
 # --- 3. DATA LOADING ---
 @st.cache_data
 def load_vocabulary(file_path):
-    # These MUST match the names of your .png files (lowercase)
     fallback_vocab = ["nose", "ear", "hair", "thigh", "head", "hand", "tongue", "neck", "leg", "lip"]
     if not os.path.exists(file_path):
         return fallback_vocab
@@ -52,26 +53,37 @@ def load_vocabulary(file_path):
         return fallback_vocab
 
 def get_ai_pairing(valid_names):
-    # We pass the list of ONLY the images we actually have to the AI
-    names_string = ", ".join(valid_names)
-    prompt = f"Choose exactly TWO words from this list: [{names_string}]. Create a simple 4-word Tamil sentence using them. Format: word1 | word2 | sentence"
+    # Give AI a smaller, more manageable sample to prevent confusion
+    sample_list = random.sample(valid_names, min(len(valid_names), 20))
+    names_string = ", ".join(sample_list)
+    
+    prompt = f"""
+    You are a Tamil language teacher for children.
+    From this list: [{names_string}]
+    1. Pick exactly TWO items that can be used together in a sentence.
+    2. Create a simple, logical Tamil sentence (using Tamil script) for kids.
+    3. Ensure the sentence is ONLY in Tamil.
+    
+    Return ONLY in this format: word1 | word2 | Tamil sentence
+    Example: eye | face | கண்ணால் முகத்தைப் பார்.
+    """
     
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a Tamil teacher. Only use words provided. Use | separator."},
-                {"role": "user", "content": prompt}
-            ],
-            timeout=10
+            messages=[{"role": "system", "content": "You only speak Tamil and follow the pipe-delimited format."},
+                      {"role": "user", "content": prompt}],
+            timeout=15
         )
-        content = response.choices[0].message.content
+        content = response.choices[0].message.content.strip()
         parts = [p.strip().lower() for p in content.split("|")]
-        if len(parts) == 3:
+        
+        # Validation: Check if we got 3 parts and if the sentence contains Tamil characters
+        if len(parts) == 3 and re.search(r'[\u0b80-\u0bff]', parts[2]):
             return parts
         return None
     except Exception as e:
-        st.sidebar.error(f"AI Error: {e}") # Show the actual error in sidebar
+        st.sidebar.error(f"AI Logic Error: {e}")
         return None
 
 def speak_tamil(text):
@@ -84,71 +96,84 @@ def speak_tamil(text):
         st.markdown(f'<audio autoplay="true"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>', unsafe_allow_html=True)
     except: pass
 
-# --- 4. FILE SYSTEM SYNC ---
+# --- 4. IMAGE SYNCING ---
 if not os.path.exists(IMAGE_PATH):
-    st.error(f"❌ Folder '{IMAGE_PATH}' not found.")
+    st.error(f"Folder '{IMAGE_PATH}' not found. Please check your GitHub repository.")
     st.stop()
 
+# Get all files and map them (handling case sensitivity)
 all_files = [f for f in os.listdir(IMAGE_PATH) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
 image_map = {os.path.splitext(f)[0].strip().lower(): f for f in all_files}
+
 vocab = load_vocabulary(EXCEL_FILE_NAME)
 valid_names = [v for v in vocab if v in image_map]
 
-# --- 5. APP UI ---
+# --- 5. UI & LESSON LOOP ---
 if "running" not in st.session_state: 
     st.session_state.running = False
 
 with st.sidebar:
-    st.title("🐘 Status")
+    st.title("🐘 Tamil Theni Settings")
     if st.session_state.running:
-        if st.button("⏹ Stop"):
+        if st.button("⏹ Stop Practice"):
             st.session_state.running = False
             st.rerun()
-    st.write(f"✅ {len(valid_names)} Images Ready")
-    if len(valid_names) < 2:
-        st.warning("Need at least 2 images to start.")
+    st.write(f"Total Images Linked: {len(valid_names)}")
+    with st.expander("Show Detected Files"):
+        st.write(list(image_map.keys()))
 
 if not st.session_state.running:
-    st.title("🐘 Tamil Theni Flashcards")
-    if st.button("🚀 Start Practice"):
+    st.title("🐘 Tamil Theni AI Flashcards")
+    st.info("AI will generate logical Tamil sentences based on your uploaded images.")
+    if st.button("🚀 Start 15s Practice"):
         st.session_state.running = True
         st.rerun()
 else:
-    # --- LESSON LOOP ---
-    with st.status("🤖 AI is thinking...", expanded=False) as status:
+    # Get AI Result
+    with st.spinner("AI is pairing items..."):
         ai_result = get_ai_pairing(valid_names)
-        if ai_result:
-            status.update(label="✅ Pair Generated!", state="complete")
-        else:
-            status.update(label="❌ AI Failed. Retrying...", state="error")
-            time.sleep(2)
-            st.rerun()
 
-    w1, w2, sentence = ai_result
-    
-    # Check if AI hallucinated words we don't have
-    if w1 in image_map and w2 in image_map:
-        card_container = st.empty()
+    if ai_result:
+        w1, w2, sentence = ai_result
         
-        # Phase 1: 8s Preview
-        for i in range(8, 0, -1):
-            with card_container.container():
-                st.write(f"### Next pair in {i}s...")
-                c1, c2 = st.columns(2)
-                c1.image(os.path.join(IMAGE_PATH, image_map[w1]), use_container_width=True)
-                c1.markdown(f"<h2 style='text-align:center;'>{w1.upper()}</h2>", unsafe_allow_html=True)
-                c2.image(os.path.join(IMAGE_PATH, image_map[w2]), use_container_width=True)
-                c2.markdown(f"<h2 style='text-align:center;'>{w2.upper()}</h2>", unsafe_allow_html=True)
-            time.sleep(1)
+        # Verification: Only display if both images truly exist in our map
+        if w1 in image_map and w2 in image_map:
+            card_placeholder = st.empty()
+            
+            # PHASE 1: 15-second Preview (with countdown)
+            for i in range(15, 0, -1):
+                with card_placeholder.container():
+                    st.markdown(f"<h3 style='text-align: center;'>Next Lesson in {i}s...</h3>", unsafe_allow_html=True)
+                    col1, col2 = st.columns(2)
+                    
+                    # Fetching images using the mapped filename to handle case sensitivity
+                    img1_path = os.path.join(IMAGE_PATH, image_map[w1])
+                    img2_path = os.path.join(IMAGE_PATH, image_map[w2])
+                    
+                    col1.image(img1_path, caption=w1.upper(), use_container_width=True)
+                    col2.image(img2_path, caption=w2.upper(), use_container_width=True)
+                time.sleep(1)
 
-        # Phase 2: 4s Lesson
-        with card_container.container():
-            st.markdown(f"<div style='background:#fdfd96; padding:30px; border-radius:15px; text-align:center;'><h1>{sentence}</h1></div>", unsafe_allow_html=True)
-            c1, c2 = st.columns(2)
-            c1.image(os.path.join(IMAGE_PATH, image_map[w1]), use_container_width=True)
-            c2.image(os.path.join(IMAGE_PATH, image_map[w2]), use_container_width=True)
-            speak_tamil(sentence)
-        time.sleep(4)
-        st.rerun()
+            # PHASE 2: 5-second Audio Lesson
+            with card_placeholder.container():
+                st.markdown(f"""
+                    <div style='background-color: #fdfd96; padding: 40px; border-radius: 20px; text-align: center; border: 5px solid #FFD700;'>
+                        <h1 style='font-size: 50px; color: #333;'>{sentence}</h1>
+                    </div>
+                """, unsafe_allow_html=True)
+                
+                col1, col2 = st.columns(2)
+                col1.image(os.path.join(IMAGE_PATH, image_map[w1]), use_container_width=True)
+                col2.image(os.path.join(IMAGE_PATH, image_map[w2]), use_container_width=True)
+                
+                speak_tamil(sentence)
+                time.sleep(5) # Give time for audio to finish
+            
+            st.rerun()
+        else:
+            # If AI picks a word we don't have, rerun immediately
+            st.rerun()
     else:
+        st.warning("AI had trouble finding a pair. Retrying...")
+        time.sleep(2)
         st.rerun()
