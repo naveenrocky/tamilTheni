@@ -79,7 +79,7 @@ def get_ai_pairing(valid_names):
     sample = random.sample(valid_names, min(len(valid_names), 30))
     if len(sample) < 2:
         return None
-    prompt = f"Pick 2 related words from {sample}. They can be from the same category (e.g., body parts, animals, colors, food, vehicles, nature) or from different categories as long as they logically connect in a kids' context (e.g., animal and food, body part and action). Choose words that can form an engaging relation. Then, write a simple 4-word Tamil sentence using both words, teaching basic vocabulary or relations in an engaging way for children. Ensure the sentence is grammatically correct and easy to understand. Format: word1 | word2 | sentence"
+    prompt = f"Pick 2 related words from {sample}. They can be from the same category (e.g., body parts, animals, colors, food, vehicles, nature) or from different categories as long as they logically connect in a kids' context (e.g., animal and food, body part and action). Choose words that can form an engaging relation. Format: word1 | word2"
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -90,7 +90,7 @@ def get_ai_pairing(valid_names):
         content = response.choices[0].message.content
         logging.info(f"AI response: {content}")
         parts = [p.strip() for p in content.split("|")]
-        if len(parts) == 3 and parts[0] in valid_names and parts[1] in valid_names:
+        if len(parts) == 2 and parts[0] in valid_names and parts[1] in valid_names:
             return parts
         else:
             logging.warning("Invalid AI response format or words not in valid names")
@@ -98,18 +98,6 @@ def get_ai_pairing(valid_names):
     except Exception as e:
         logging.exception("Error in AI pairing")
         return None
-
-def speak_tamil(text):
-    try:
-        tts = gTTS(text=text, lang='ta')
-        tts.save("temp_voice.mp3")
-        with open("temp_voice.mp3", "rb") as f:
-            data = f.read()
-        b64 = base64.b64encode(data).decode()
-        st.markdown(f'<audio autoplay="true"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>', unsafe_allow_html=True)
-    except Exception as e:
-        logging.exception("Error in speech synthesis")
-        pass
 
 def load_image_as_bytes(img_path):
     try:
@@ -164,12 +152,14 @@ if "paused" not in st.session_state:
     st.session_state.paused = False
 if "retry_count" not in st.session_state:
     st.session_state.retry_count = 0
-if "pair_index" not in st.session_state:
-    st.session_state.pair_index = 0
-if "pairs" not in st.session_state:
-    st.session_state.pairs = []
+if "pair_count" not in st.session_state:
+    st.session_state.pair_count = 0
 if "session_valid_names" not in st.session_state:
     st.session_state.session_valid_names = []
+if "current_pair" not in st.session_state:
+    st.session_state.current_pair = None
+if "display_start_time" not in st.session_state:
+    st.session_state.display_start_time = None
 
 with st.sidebar:
     st.title("🐘 Tamil Theni Settings")
@@ -179,9 +169,10 @@ with st.sidebar:
             st.session_state.running = False
             st.session_state.paused = False
             st.session_state.retry_count = 0
-            st.session_state.pair_index = 0
-            st.session_state.pairs = []
+            st.session_state.pair_count = 0
             st.session_state.session_valid_names = []
+            st.session_state.current_pair = None
+            st.session_state.display_start_time = None
             st.rerun()
         if not st.session_state.paused:
             if st.button("⏸ Pause Practice"):
@@ -194,30 +185,17 @@ with st.sidebar:
 
 if not st.session_state.running:
     st.title("🐘 Tamil Theni - Level 2")
-    if len(valid_names) < 40:  # Need at least 40 for 20 pairs
-        st.error("Need at least 40 images or vocabulary words to start practice (for 20 pairs). Please add more.")
+    if len(valid_names) < 2:
+        st.error("Need at least 2 images or vocabulary words to start practice. Please add more to the 'images' folder or check your Excel file.")
     else:
         if st.button("🚀 Start Practice"):
             st.session_state.running = True
             st.session_state.paused = False
             st.session_state.retry_count = 0
-            st.session_state.pair_index = 0
-            st.session_state.session_valid_names = random.sample(valid_names, len(valid_names))  # Shuffle
-            st.session_state.pairs = []
-            with st.spinner("Generating 20 pairs..."):
-                temp_names = st.session_state.session_valid_names.copy()
-                while len(st.session_state.pairs) < 20 and len(temp_names) >= 2:
-                    ai_result = get_ai_pairing(temp_names)
-                    if ai_result:
-                        w1, w2, sentence = ai_result
-                        if w1 in image_map and w2 in image_map:
-                            st.session_state.pairs.append((w1, w2, sentence))
-                            if w1 in temp_names:
-                                temp_names.remove(w1)
-                            if w2 in temp_names:
-                                temp_names.remove(w2)
-            if len(st.session_state.pairs) < 20:
-                st.warning(f"Only generated {len(st.session_state.pairs)} pairs. Starting with those.")
+            st.session_state.pair_count = 0
+            st.session_state.session_valid_names = random.sample(valid_names, len(valid_names))  # Shuffle for randomness
+            st.session_state.current_pair = None
+            st.session_state.display_start_time = None
             st.rerun()
 else:
     if st.session_state.paused:
@@ -225,33 +203,67 @@ else:
         st.info("Practice Paused. Use sidebar to resume or stop.")
         st.stop()
 
-    if st.session_state.pair_index >= len(st.session_state.pairs):
+    if st.session_state.pair_count >= 20:
         st.session_state.running = False
-        st.session_state.pair_index = 0
-        st.session_state.pairs = []
+        st.session_state.pair_count = 0
         st.session_state.session_valid_names = []
-        st.success("Completed the session! Start a new practice.")
+        st.session_state.current_pair = None
+        st.session_state.display_start_time = None
+        st.success("Completed 20 sets! Start a new practice.")
         st.rerun()
 
-    # Get current pair
-    w1, w2, sentence = st.session_state.pairs[st.session_state.pair_index]
-    
-    card_placeholder = st.empty()
-    
-    # Load images as bytes once
-    img1_path = os.path.join(IMAGE_PATH, image_map[w1])
-    img2_path = os.path.join(IMAGE_PATH, image_map[w2])
-    img1_bytes = load_image_as_bytes(img1_path)
-    img2_bytes = load_image_as_bytes(img2_path)
-    
-    # PHASE 1: 15-second Image Display
-    if "phase" not in st.session_state or st.session_state.phase != "images":
-        st.session_state.phase = "images"
-        st.session_state.countdown = 15
-    
-    while st.session_state.countdown > 0 and not st.session_state.paused:
+    # Get next pair if not current
+    if st.session_state.current_pair is None:
+        with st.spinner("AI is pairing items..."):
+            ai_result = get_ai_pairing(st.session_state.session_valid_names)
+
+        if ai_result:
+            st.session_state.retry_count = 0
+            w1, w2 = ai_result
+            
+            # Verification
+            if w1 not in image_map or w2 not in image_map:
+                logging.warning(f"AI selected non-existent images: {w1}, {w2}")
+                st.rerun()
+            
+            # Remove used words
+            if w1 in st.session_state.session_valid_names:
+                st.session_state.session_valid_names.remove(w1)
+            if w2 in st.session_state.session_valid_names:
+                st.session_state.session_valid_names.remove(w2)
+            
+            st.session_state.current_pair = (w1, w2)
+            st.session_state.display_start_time = time.time()
+            st.rerun()
+        else:
+            st.session_state.retry_count += 1
+            if st.session_state.retry_count > 10:
+                st.session_state.running = False
+                st.session_state.retry_count = 0
+                st.session_state.pair_count = 0
+                st.session_state.session_valid_names = []
+                st.session_state.current_pair = None
+                st.session_state.display_start_time = None
+                st.error("Too many failed attempts to find a valid pair. Please check logs for details, add more images, or verify vocabulary matches image names (without extensions).")
+            else:
+                st.warning("AI had trouble finding a pair. Retrying...")
+                time.sleep(2)
+                st.rerun()
+    else:
+        w1, w2 = st.session_state.current_pair
+        
+        # Load images
+        img1_path = os.path.join(IMAGE_PATH, image_map[w1])
+        img2_path = os.path.join(IMAGE_PATH, image_map[w2])
+        img1_bytes = load_image_as_bytes(img1_path)
+        img2_bytes = load_image_as_bytes(img2_path)
+        
+        # Display the pair
+        card_placeholder = st.empty()
         with card_placeholder.container():
-            st.markdown(f"<h3 style='text-align: center;'>Next Pair in {st.session_state.countdown}s...</h3>", unsafe_allow_html=True)
+            elapsed = time.time() - st.session_state.display_start_time
+            remaining = max(0, 15 - int(elapsed))
+            st.markdown(f"<h3 style='text-align: center;'>Answer in {remaining}s...</h3>", unsafe_allow_html=True)
             col1, col2 = st.columns(2)
             
             if img1_bytes:
@@ -263,47 +275,13 @@ else:
             else:
                 col2.text(f"Image not found: {w2}")
         
-        time.sleep(1)
-        st.session_state.countdown -= 1
-        if st.session_state.countdown > 0:
+        # Check if 15 seconds have passed
+        if time.time() - st.session_state.display_start_time >= 15:
+            st.session_state.pair_count += 1
+            st.session_state.current_pair = None
+            st.session_state.display_start_time = None
             st.rerun()
-    
-    if st.session_state.paused:
-        st.rerun()  # Handle pause
-    
-    # PHASE 2: Display Sentence and Play Audio (hold for 5s)
-    st.session_state.phase = "sentence"
-    st.session_state.countdown = 5
-    
-    with card_placeholder.container():
-        st.markdown(f"""
-            <div style='background-color: #fdfd96; padding: 40px; border-radius: 20px; text-align: center; border: 5px solid #FFD700;'>
-                <h1 style='font-size: 60px; color: #333;'>{sentence}</h1>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        col1, col2 = st.columns(2)
-        if img1_bytes:
-            col1.image(img1_bytes, use_container_width=True)
         else:
-            col1.text(f"Image not found: {w1}")
-        if img2_bytes:
-            col2.image(img2_bytes, use_container_width=True)
-        else:
-            col2.text(f"Image not found: {w2}")
-        
-        speak_tamil(sentence)
-    
-    while st.session_state.countdown > 0 and not st.session_state.paused:
-        time.sleep(1)
-        st.session_state.countdown -= 1
-        if st.session_state.countdown > 0:
+            # Rerun after 1 second to update countdown
+            time.sleep(1)
             st.rerun()
-    
-    if st.session_state.paused:
-        st.rerun()  # Handle pause
-    
-    # Move to next pair
-    st.session_state.pair_index += 1
-    del st.session_state.phase  # Reset phase
-    st.rerun()
