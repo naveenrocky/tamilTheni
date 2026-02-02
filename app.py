@@ -42,7 +42,7 @@ st.markdown("""
 def check_password():
     if st.session_state.get("password_correct", False):
         return True
-    st.title("🔐 Tamil Theni Private Access")
+    st.title("🔐 Tamil Theni - Level 2")
     pwd = st.text_input("Enter Access Password", type="password")
     if st.button("Sign In"):
         if hmac.compare_digest(pwd, APP_PASSWORD):
