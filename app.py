@@ -156,6 +156,10 @@ if "pair_count" not in st.session_state:
     st.session_state.pair_count = 0
 if "session_valid_names" not in st.session_state:
     st.session_state.session_valid_names = []
+if "current_pair" not in st.session_state:
+    st.session_state.current_pair = None
+if "display_start_time" not in st.session_state:
+    st.session_state.display_start_time = None
 
 with st.sidebar:
     st.title("🐘 Tamil Theni Settings")
@@ -167,6 +171,8 @@ with st.sidebar:
             st.session_state.retry_count = 0
             st.session_state.pair_count = 0
             st.session_state.session_valid_names = []
+            st.session_state.current_pair = None
+            st.session_state.display_start_time = None
             st.rerun()
         if not st.session_state.paused:
             if st.button("⏸ Pause Practice"):
@@ -188,6 +194,8 @@ if not st.session_state.running:
             st.session_state.retry_count = 0
             st.session_state.pair_count = 0
             st.session_state.session_valid_names = random.sample(valid_names, len(valid_names))  # Shuffle for randomness
+            st.session_state.current_pair = None
+            st.session_state.display_start_time = None
             st.rerun()
 else:
     if st.session_state.paused:
@@ -199,76 +207,81 @@ else:
         st.session_state.running = False
         st.session_state.pair_count = 0
         st.session_state.session_valid_names = []
+        st.session_state.current_pair = None
+        st.session_state.display_start_time = None
         st.success("Completed 20 sets! Start a new practice.")
         st.rerun()
 
-    # Get AI Result
-    with st.spinner("AI is pairing items..."):
-        ai_result = get_ai_pairing(st.session_state.session_valid_names)
+    # Get next pair if not current
+    if st.session_state.current_pair is None:
+        with st.spinner("AI is pairing items..."):
+            ai_result = get_ai_pairing(st.session_state.session_valid_names)
 
-    if ai_result:
-        st.session_state.retry_count = 0  # Reset on success
-        w1, w2 = ai_result
+        if ai_result:
+            st.session_state.retry_count = 0
+            w1, w2 = ai_result
+            
+            # Verification
+            if w1 not in image_map or w2 not in image_map:
+                logging.warning(f"AI selected non-existent images: {w1}, {w2}")
+                st.rerun()
+            
+            # Remove used words
+            if w1 in st.session_state.session_valid_names:
+                st.session_state.session_valid_names.remove(w1)
+            if w2 in st.session_state.session_valid_names:
+                st.session_state.session_valid_names.remove(w2)
+            
+            st.session_state.current_pair = (w1, w2)
+            st.session_state.display_start_time = time.time()
+            st.rerun()
+        else:
+            st.session_state.retry_count += 1
+            if st.session_state.retry_count > 10:
+                st.session_state.running = False
+                st.session_state.retry_count = 0
+                st.session_state.pair_count = 0
+                st.session_state.session_valid_names = []
+                st.session_state.current_pair = None
+                st.session_state.display_start_time = None
+                st.error("Too many failed attempts to find a valid pair. Please check logs for details, add more images, or verify vocabulary matches image names (without extensions).")
+            else:
+                st.warning("AI had trouble finding a pair. Retrying...")
+                time.sleep(2)
+                st.rerun()
+    else:
+        w1, w2 = st.session_state.current_pair
         
-        # Verification: Only display if both images truly exist in our map
-        if w1 not in image_map or w2 not in image_map:
-            logging.warning(f"AI selected non-existent images: {w1}, {w2}")
-            st.rerun()  # Rerun if mismatch
-        
-        # Remove used words for no repetition in session
-        if w1 in st.session_state.session_valid_names:
-            st.session_state.session_valid_names.remove(w1)
-        if w2 in st.session_state.session_valid_names:
-            st.session_state.session_valid_names.remove(w2)
-        
-        card_placeholder = st.empty()
-        
-        # Load images as bytes once
+        # Load images
         img1_path = os.path.join(IMAGE_PATH, image_map[w1])
         img2_path = os.path.join(IMAGE_PATH, image_map[w2])
         img1_bytes = load_image_as_bytes(img1_path)
         img2_bytes = load_image_as_bytes(img2_path)
         
-        # Single Phase: Stateful 8-second Display for the pair (question time)
-        if "phase" not in st.session_state or st.session_state.phase != "display":
-            st.session_state.phase = "display"
-            st.session_state.countdown = 8
-        
-        while st.session_state.countdown > 0 and not st.session_state.paused:
-            with card_placeholder.container():
-                st.markdown(f"<h3 style='text-align: center;'>Answer in {st.session_state.countdown}s...</h3>", unsafe_allow_html=True)
-                col1, col2 = st.columns(2)
-                
-                if img1_bytes:
-                    col1.image(img1_bytes, caption=w1.upper(), use_container_width=True)
-                else:
-                    col1.text(f"Image not found: {w1}")
-                if img2_bytes:
-                    col2.image(img2_bytes, caption=w2.upper(), use_container_width=True)
-                else:
-                    col2.text(f"Image not found: {w2}")
+        # Display the pair
+        card_placeholder = st.empty()
+        with card_placeholder.container():
+            elapsed = time.time() - st.session_state.display_start_time
+            remaining = max(0, 15 - int(elapsed))
+            st.markdown(f"<h3 style='text-align: center;'>Answer in {remaining}s...</h3>", unsafe_allow_html=True)
+            col1, col2 = st.columns(2)
             
-            time.sleep(1)
-            st.session_state.countdown -= 1
-            if st.session_state.countdown > 0:
-                st.rerun()
+            if img1_bytes:
+                col1.image(img1_bytes, caption=w1.upper(), use_container_width=True)
+            else:
+                col1.text(f"Image not found: {w1}")
+            if img2_bytes:
+                col2.image(img2_bytes, caption=w2.upper(), use_container_width=True)
+            else:
+                col2.text(f"Image not found: {w2}")
         
-        if st.session_state.paused:
-            st.rerun()  # Handle pause
-        
-        # After 8s, move to next pair
-        st.session_state.pair_count += 1
-        del st.session_state.phase  # Reset phase
-        st.rerun()
-    else:
-        st.session_state.retry_count += 1
-        if st.session_state.retry_count > 10:
-            st.session_state.running = False
-            st.session_state.retry_count = 0
-            st.session_state.pair_count = 0
-            st.session_state.session_valid_names = []
-            st.error("Too many failed attempts to find a valid pair. Please check logs for details, add more images, or verify vocabulary matches image names (without extensions).")
+        # Check if 15 seconds have passed
+        if time.time() - st.session_state.display_start_time >= 15:
+            st.session_state.pair_count += 1
+            st.session_state.current_pair = None
+            st.session_state.display_start_time = None
+            st.rerun()
         else:
-            st.warning("AI had trouble finding a pair. Retrying...")
-            time.sleep(2)
+            # Rerun after 1 second to update countdown
+            time.sleep(1)
             st.rerun()
