@@ -79,7 +79,7 @@ def get_ai_pairing(valid_names):
     sample = random.sample(valid_names, min(len(valid_names), 30))
     if len(sample) < 2:
         return None
-    prompt = f"Pick 2 related words from {sample}. They can be from the same category (e.g., body parts, animals, colors, food, vehicles, nature) or from different categories as long as they logically connect in a kids' context (e.g., animal and food, body part and action). Choose words that can form an engaging relation. Then, write a simple 4-word Tamil sentence using both words, teaching basic vocabulary or relations in an engaging way for children. Ensure the sentence is grammatically correct and easy to understand. Format: word1 | word2 | sentence"
+    prompt = f"Pick 2 related words from {sample}. They can be from the same category (e.g., body parts, animals, colors, food, vehicles, nature) or from different categories as long as they logically connect in a kids' context (e.g., animal and food, body part and action). Choose words that can form an engaging relation. Format: word1 | word2"
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -90,7 +90,7 @@ def get_ai_pairing(valid_names):
         content = response.choices[0].message.content
         logging.info(f"AI response: {content}")
         parts = [p.strip() for p in content.split("|")]
-        if len(parts) == 3 and parts[0] in valid_names and parts[1] in valid_names:
+        if len(parts) == 2 and parts[0] in valid_names and parts[1] in valid_names:
             return parts
         else:
             logging.warning("Invalid AI response format or words not in valid names")
@@ -98,18 +98,6 @@ def get_ai_pairing(valid_names):
     except Exception as e:
         logging.exception("Error in AI pairing")
         return None
-
-def speak_tamil(text):
-    try:
-        tts = gTTS(text=text, lang='ta')
-        tts.save("temp_voice.mp3")
-        with open("temp_voice.mp3", "rb") as f:
-            data = f.read()
-        b64 = base64.b64encode(data).decode()
-        st.markdown(f'<audio autoplay="true"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>', unsafe_allow_html=True)
-    except Exception as e:
-        logging.exception("Error in speech synthesis")
-        pass
 
 def load_image_as_bytes(img_path):
     try:
@@ -194,7 +182,7 @@ if not st.session_state.running:
     if len(valid_names) < 2:
         st.error("Need at least 2 images or vocabulary words to start practice. Please add more to the 'images' folder or check your Excel file.")
     else:
-        if st.button("🚀 Start 15s Practice"):
+        if st.button("🚀 Start Practice"):
             st.session_state.running = True
             st.session_state.paused = False
             st.session_state.retry_count = 0
@@ -220,7 +208,7 @@ else:
 
     if ai_result:
         st.session_state.retry_count = 0  # Reset on success
-        w1, w2, sentence = ai_result
+        w1, w2 = ai_result
         
         # Verification: Only display if both images truly exist in our map
         if w1 not in image_map or w2 not in image_map:
@@ -241,14 +229,14 @@ else:
         img1_bytes = load_image_as_bytes(img1_path)
         img2_bytes = load_image_as_bytes(img2_path)
         
-        # PHASE 1: Stateful 8-second Preview (question time)
-        if "phase" not in st.session_state or st.session_state.phase != "preview":
-            st.session_state.phase = "preview"
+        # Single Phase: Stateful 8-second Display for the pair (question time)
+        if "phase" not in st.session_state or st.session_state.phase != "display":
+            st.session_state.phase = "display"
             st.session_state.countdown = 8
         
         while st.session_state.countdown > 0 and not st.session_state.paused:
             with card_placeholder.container():
-                st.markdown(f"<h3 style='text-align: center;'>Think and Answer in {st.session_state.countdown}s...</h3>", unsafe_allow_html=True)
+                st.markdown(f"<h3 style='text-align: center;'>Answer in {st.session_state.countdown}s...</h3>", unsafe_allow_html=True)
                 col1, col2 = st.columns(2)
                 
                 if img1_bytes:
@@ -268,39 +256,7 @@ else:
         if st.session_state.paused:
             st.rerun()  # Handle pause
         
-        # PHASE 2: Stateful 8-second Audio Lesson (reveal answer)
-        st.session_state.phase = "audio"
-        st.session_state.countdown = 8
-        
-        with card_placeholder.container():
-            st.markdown(f"""
-                <div style='background-color: #fdfd96; padding: 40px; border-radius: 20px; text-align: center; border: 5px solid #FFD700;'>
-                    <h1 style='font-size: 60px; color: #333;'>{sentence}</h1>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            col1, col2 = st.columns(2)
-            if img1_bytes:
-                col1.image(img1_bytes, use_container_width=True)
-            else:
-                col1.text(f"Image not found: {w1}")
-            if img2_bytes:
-                col2.image(img2_bytes, use_container_width=True)
-            else:
-                col2.text(f"Image not found: {w2}")
-            
-            speak_tamil(sentence)
-        
-        while st.session_state.countdown > 0 and not st.session_state.paused:
-            time.sleep(1)
-            st.session_state.countdown -= 1
-            if st.session_state.countdown > 0:
-                st.rerun()
-        
-        if st.session_state.paused:
-            st.rerun()  # Handle pause
-        
-        # Increment pair count after full cycle
+        # After 8s, move to next pair
         st.session_state.pair_count += 1
         del st.session_state.phase  # Reset phase
         st.rerun()
