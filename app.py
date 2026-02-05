@@ -9,7 +9,6 @@ from openai import OpenAI
 from gtts import gTTS
 import logging
 from itertools import combinations
-import pickle
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -23,7 +22,6 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 # Ensure folder names match your GitHub repo exactly
 IMAGE_PATH = "images" 
 EXCEL_FILE_NAME = "TT2026-Word-List-Theni-1_2_3_4 conv.xlsx"
-USED_PAIRS_FILE = "used_pairs.pkl"  # For persistent storage across sessions
 
 st.set_page_config(page_title="Tamil Theni - Level 2", page_icon="🐘", layout="wide")
 
@@ -80,30 +78,25 @@ def get_ai_pairing(valid_names):
         logging.warning("Fewer than 2 valid names available for pairing")
         return None
 
-    # Load used pairs from file (persistent across sessions)
-    if os.path.exists(USED_PAIRS_FILE):
-        with open(USED_PAIRS_FILE, 'rb') as f:
-            used_pairs = pickle.load(f)
-    else:
-        used_pairs = set()
+    # Load used pairs if exists (persistent across sessions, but since Streamlit Cloud may not persist files, using session_state instead)
+    if "used_pairs" not in st.session_state:
+        st.session_state.used_pairs = set()
 
     # Get all possible pairs and filter unused
     all_possible = list(combinations(valid_names, 2))
-    unused = [pair for pair in all_possible if frozenset(pair) not in used_pairs]
+    unused = [pair for pair in all_possible if frozenset(pair) not in st.session_state.used_pairs]
 
-    if unused:
-        selected_pair = random.choice(unused)
-        w1, w2 = selected_pair
-    else:
-        # If all used, reset and sample normally
-        used_pairs = set()
-        sample = random.sample(valid_names, 2)
-        w1, w2 = sample
+    if not unused:
+        # Reset if all used
+        st.session_state.used_pairs = set()
+        unused = all_possible
 
-    # Generate sentence with AI
-    prompt = f"""You are a Tamil teacher preparing a child for the Tamil Theni Level Malaragal competition. Words are from D1 (basic English terms) in categories like: Body Parts, Food & Groceries, Household Items, School Items, Family, Fruits, Numbers and Math, Geography, Love and Care, Climate Changes and Pollution, Astronomy, Birthday, Grammar, Trees, Opposites, Arts and Crafts, Sea Creatures, Immigration, Grains, Roadways.
+    selected_pair = random.choice(unused)
+    w1, w2 = selected_pair
 
-From the list {sample}, pick 2 related D1 words that can form a meaningful connection (same category or cross-category if logical for kids, e.g., body part with action or food with household item). Choose new combinations to avoid repetition.
+    f"""You are a Tamil teacher preparing a child for the Tamil Theni Level Malaragal competition.     Format: word1 | word2 | wordsentencein categories like: Body Parts, Food & Groceries, Household Items, School Items, Family, Fruits, Numbers and Math, Geography, Love and Care, Climate Changes and Pollution, Astronomy, Birthday, Grammar, Trees, Opposites, Arts and Crafts, Sea Creatures, Immigration, Grains, Roadways.
+
+From the list {valid_names}, pick 2 related D1 words that can form a meaningful connection (same category or cross-category if logical for kids, e.g., body part with action or food with household item). Choose new combinations to avoid repetition.
 
 Create a simple, engaging Tamil sentence using the Tamil translations of both words, teaching basic vocabulary in a fun way for children. Sentence must be grammatically correct and easy.
 
@@ -112,17 +105,20 @@ Format: word1 | word2 | wordsentence"""
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "system", "content": "You are a Tamil teacher for kids. Generate a 4-word sentence."},
+            messages=[{"role": "system", "content": "You are a Tamil teacher for kids. Use pipe | separator."},
                       {"role": "user", "content": prompt}],
             timeout=10
         )
-        sentence = response.choices[0].message.content.strip()
-        logging.info(f"AI sentence: {sentence}")
-        # Add to used pairs and save
-        used_pairs.add(frozenset([w1, w2]))
-        with open(USED_PAIRS_FILE, 'wb') as f:
-            pickle.dump(used_pairs, f)
-        return [w1, w2, sentence]
+        content = response.choices[0].message.content
+        logging.info(f"AI response: {content}")
+        parts = [p.strip() for p in content.split("|")]
+        if len(parts) == 3 and parts[0] in valid_names and parts[1] in valid_names:
+            # Add to used pairs
+            st.session_state.used_pairs.add(frozenset([parts[0], parts[1]]))
+            return parts
+        else:
+            logging.warning("Invalid AI response format or words not in valid names")
+            return None
     except Exception as e:
         logging.exception("Error in AI pairing")
         return None
