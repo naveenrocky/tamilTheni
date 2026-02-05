@@ -8,7 +8,6 @@ import base64
 from openai import OpenAI
 from gtts import gTTS
 import logging
-from itertools import combinations
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -77,44 +76,21 @@ def get_ai_pairing(valid_names):
     if len(valid_names) < 2:
         logging.warning("Fewer than 2 valid names available for pairing")
         return None
-
-    # Load used pairs if exists (persistent across sessions, but since Streamlit Cloud may not persist files, using session_state instead)
-    if "used_pairs" not in st.session_state:
-        st.session_state.used_pairs = set()
-
-    # Get all possible pairs and filter unused
-    all_possible = list(combinations(valid_names, 2))
-    unused = [pair for pair in all_possible if frozenset(pair) not in st.session_state.used_pairs]
-
-    if not unused:
-        # Reset if all used
-        st.session_state.used_pairs = set()
-        unused = all_possible
-
-    selected_pair = random.choice(unused)
-    w1, w2 = selected_pair
-
-    f"""You are a Tamil teacher preparing a child for the Tamil Theni Level Malaragal competition.     Format: word1 | word2 | wordsentencein categories like: Body Parts, Food & Groceries, Household Items, School Items, Family, Fruits, Numbers and Math, Geography, Love and Care, Climate Changes and Pollution, Astronomy, Birthday, Grammar, Trees, Opposites, Arts and Crafts, Sea Creatures, Immigration, Grains, Roadways.
-
-From the list {valid_names}, pick 2 related D1 words that can form a meaningful connection (same category or cross-category if logical for kids, e.g., body part with action or food with household item). Choose new combinations to avoid repetition.
-
-Create a simple, engaging Tamil sentence using the Tamil translations of both words, teaching basic vocabulary in a fun way for children. Sentence must be grammatically correct and easy.
-
-Format: word1 | word2 | wordsentence"""
-
+    sample = random.sample(valid_names, min(len(valid_names), 30))
+    if len(sample) < 2:
+        return None
+    prompt = f"Pick 2 related words from {sample}. They can be from the same category (e.g., body parts, animals, colors, food, vehicles, nature) or from different categories as long as they logically connect in a kids' context (e.g., animal and food, body part and action). Choose words that can form an engaging relation. Format: word1 | word2"
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[{"role": "system", "content": "You are a Tamil teacher for kids. Use pipe | separator."},
+            messages=[{"role": "system", "content": "You are a Tamil teacher for kids. Pick related words within or across categories and use pipe | separator."},
                       {"role": "user", "content": prompt}],
             timeout=10
         )
         content = response.choices[0].message.content
         logging.info(f"AI response: {content}")
         parts = [p.strip() for p in content.split("|")]
-        if len(parts) == 3 and parts[0] in valid_names and parts[1] in valid_names:
-            # Add to used pairs
-            st.session_state.used_pairs.add(frozenset([parts[0], parts[1]]))
+        if len(parts) == 2 and parts[0] in valid_names and parts[1] in valid_names:
             return parts
         else:
             logging.warning("Invalid AI response format or words not in valid names")
@@ -243,7 +219,7 @@ else:
 
         if ai_result:
             st.session_state.retry_count = 0
-            w1, w2, sentence = ai_result
+            w1, w2 = ai_result
             
             # Verification
             if w1 not in image_map or w2 not in image_map:
@@ -256,7 +232,7 @@ else:
             if w2 in st.session_state.session_valid_names:
                 st.session_state.session_valid_names.remove(w2)
             
-            st.session_state.current_pair = (w1, w2, sentence)
+            st.session_state.current_pair = (w1, w2)
             st.session_state.display_start_time = time.time()
             st.rerun()
         else:
@@ -274,7 +250,7 @@ else:
                 time.sleep(2)
                 st.rerun()
     else:
-        w1, w2, sentence = st.session_state.current_pair
+        w1, w2 = st.session_state.current_pair
         
         # Load images
         img1_path = os.path.join(IMAGE_PATH, image_map[w1])
@@ -284,51 +260,28 @@ else:
         
         # Display the pair
         card_placeholder = st.empty()
-        elapsed = time.time() - st.session_state.display_start_time
-        if elapsed < 15:
-            # Phase 1: Show images for 15 seconds
-            with card_placeholder.container():
-                remaining = max(0, 15 - int(elapsed))
-                st.markdown(f"<h3 style='text-align: center;'>Answer in {remaining}s...</h3>", unsafe_allow_html=True)
-                col1, col2 = st.columns(2)
-                
-                if img1_bytes:
-                    col1.image(img1_bytes, caption=w1.upper(), use_container_width=True)
-                else:
-                    col1.text(f"Image not found: {w1}")
-                if img2_bytes:
-                    col2.image(img2_bytes, caption=w2.upper(), use_container_width=True)
-                else:
-                    col2.text(f"Image not found: {w2}")
-        else:
-            # Phase 2: Show sentence and play audio
-            with card_placeholder.container():
-                st.markdown(f"""
-                    <div style='background-color: #fdfd96; padding: 40px; border-radius: 20px; text-align: center; border: 5px solid #FFD700;'>
-                        <h1 style='font-size: 60px; color: #333;'>{sentence}</h1>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-                col1, col2 = st.columns(2)
-                if img1_bytes:
-                    col1.image(img1_bytes, use_container_width=True)
-                else:
-                    col1.text(f"Image not found: {w1}")
-                if img2_bytes:
-                    col2.image(img2_bytes, use_container_width=True)
-                else:
-                    col2.text(f"Image not found: {w2}")
-                
-                speak_tamil(sentence)
+        with card_placeholder.container():
+            elapsed = time.time() - st.session_state.display_start_time
+            remaining = max(0, 15 - int(elapsed))
+            st.markdown(f"<h3 style='text-align: center;'>Answer in {remaining}s...</h3>", unsafe_allow_html=True)
+            col1, col2 = st.columns(2)
             
-            # Hold for audio to play (assume ~5s), then move to next
-            time.sleep(5)
+            if img1_bytes:
+                col1.image(img1_bytes, caption=w1.upper(), use_container_width=True)
+            else:
+                col1.text(f"Image not found: {w1}")
+            if img2_bytes:
+                col2.image(img2_bytes, caption=w2.upper(), use_container_width=True)
+            else:
+                col2.text(f"Image not found: {w2}")
+        
+        # Check if 15 seconds have passed
+        if time.time() - st.session_state.display_start_time >= 15:
             st.session_state.pair_count += 1
             st.session_state.current_pair = None
             st.session_state.display_start_time = None
             st.rerun()
-        
-        # Rerun after 1 second to update countdown if in phase 1
-        if elapsed < 15:
+        else:
+            # Rerun after 1 second to update countdown
             time.sleep(1)
             st.rerun()
