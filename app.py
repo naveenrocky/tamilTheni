@@ -103,11 +103,11 @@ def get_ai_pairing(valid_names):
     # Generate sentence with AI
     prompt = f"""You are a Tamil teacher preparing a child for the Tamil Theni Level Malaragal competition. Words are from D1 (basic English terms) in categories like: Body Parts, Food & Groceries, Household Items, School Items, Family, Fruits, Numbers and Math, Geography, Love and Care, Climate Changes and Pollution, Astronomy, Birthday, Grammar, Trees, Opposites, Arts and Crafts, Sea Creatures, Immigration, Grains, Roadways.
 
-From the list {sample}, pick 2 to 3 related D1 words that can form a meaningful connection (same category or cross-category if logical for kids, e.g., body part with action or food with household item). Choose new combinations to avoid repetition.
+From the list {sample}, pick 2 related D1 words that can form a meaningful connection (same category or cross-category if logical for kids, e.g., body part with action or food with household item). Choose new combinations to avoid repetition.
 
 Create a simple, engaging Tamil sentence using the Tamil translations of both words, teaching basic vocabulary in a fun way for children. Sentence must be grammatically correct and easy.
 
-Format: word1 | word2 | word3 | wordsentence"""
+Format: word1 | word2 | wordsentence"""
 
     try:
         response = client.chat.completions.create(
