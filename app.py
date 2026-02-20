@@ -43,7 +43,7 @@ st.markdown("""
             background-color: #f0f9f0;
             border-left: 10px solid #2E7D32;
             padding: 25px;
-            font-size: 36px !important;
+            font-size: 38px !important;
             font-weight: bold;
             text-align: center;
             border-radius: 15px;
@@ -77,7 +77,7 @@ KIDS_AI_INSTRUCTIONS = """You are a Kindergarten Tamil Teacher.
 1. Use ONLY Pure Tamil words. Never use English words written in Tamil (e.g., use 'உடல்', NOT 'பாடி').
 2. MANDATORY: The sentence MUST include ALL the words provided in the list.
 3. SIMPLICITY: Sentences must be 3 to 5 words long. Use basic Subject-Object-Verb structure.
-4. STRICT RULE: DO NOT include any unrelated English words (like 'fire', 'fan', 'apple') at the end of your response. Only return the requested format.
+4. STRICT RULE: DO NOT include any unrelated English words (like 'fire', 'fan', 'apple') at the end. Only return the requested format.
 """
 
 def get_ai_pairing(valid_names):
@@ -111,9 +111,9 @@ def generate_all_combinations(word_list):
     all_results = []
     chunk_size = 30 
     chunks = [word_list[i:i + chunk_size] for i in range(0, len(word_list), chunk_size)]
-    progress_bar = st.progress(0, text="Generating 1000+ Simple Pure Tamil Combinations...")
+    progress_bar = st.progress(0, text="Generating Combinations...")
     for i, chunk in enumerate(chunks):
-        prompt = f"Words: {chunk}. Create as many simple cross-category pairs as possible. Format: Word1, Word2 | Sentence."
+        prompt = f"Words: {chunk}. Create simple pairs. Format: Word1, Word2 | Sentence."
         try:
             response = client.chat.completions.create(
                 model="gpt-4o",
@@ -148,16 +148,16 @@ with st.sidebar:
     if st.button("🚀 Practice Game", use_container_width=True):
         st.session_state.view_mode = "Practice"
         st.rerun()
-    if st.button("📚 Teacher's Guide (All Pairs)", use_container_width=True):
+    if st.button("📚 Teacher's Guide (Full List)", use_container_width=True):
         st.session_state.view_mode = "Combinations"
         st.rerun()
     st.divider()
     st.write(f"Total Images: {len(valid_names)}")
 
-# --- PAGE: COMBINATIONS LIST (Accessible only via Teacher's Guide) ---
+# --- PAGE: COMBINATIONS LIST ---
 if st.session_state.view_mode == "Combinations":
     st.title("📚 Teachers' Simple Sentence Guide")
-    if st.button("🔄 Refresh / Regenerate List"):
+    if st.button("🔄 Regenerate List"):
         st.cache_data.clear()
         st.rerun()
     raw_pairs = generate_all_combinations(valid_names)
@@ -181,7 +181,7 @@ if not st.session_state.running:
         st.session_state.current_pair = None
         st.rerun()
 else:
-    # 1. Timer logic - DISPLAYED AT TOP
+    # 1. Timer logic - TOP ONLY
     if st.session_state.current_pair:
         elapsed = time.time() - st.session_state.display_start_time
         remaining = max(0, 15 - int(elapsed))
@@ -193,25 +193,25 @@ else:
 
     # 2. Game Display
     if st.session_state.current_pair is None:
-        with st.spinner("AI is thinking of a simple connection..."):
+        with st.spinner("Preparing next set..."):
             result = get_ai_pairing(valid_names)
             if result:
                 st.session_state.current_pair, st.session_state.current_sentence = result
                 st.session_state.display_start_time = time.time()
                 st.rerun()
     else:
-        # Display simplified sentence box
+        # Display simplified sentence box (Bigger font for kids)
         st.markdown(f"<div class='tamil-sentence-box'>{st.session_state.current_sentence}</div>", unsafe_allow_html=True)
         
-        # Display Images
+        # Display Images ONLY (No captions, no vocabulary text)
         words = st.session_state.current_pair
         cols = st.columns(len(words))
         for idx, w in enumerate(words):
             if w in image_map:
                 img_path = os.path.join(IMAGE_PATH, image_map[w])
                 with open(img_path, "rb") as f:
-                    cols[idx].image(f.read(), caption=w.upper(), use_container_width=True)
+                    # caption parameter is removed to hide text below image
+                    cols[idx].image(f.read(), use_container_width=True)
         
-        # Continuous loop for unlimited practice
         time.sleep(1)
         st.rerun()
