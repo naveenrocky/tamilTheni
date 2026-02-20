@@ -61,17 +61,17 @@ def check_password():
 if not check_password():
     st.stop()
 
-# --- 3. CORE LOGIC & AI (ENHANCED) ---
+# --- 3. CORE LOGIC & AI INSTRUCTIONS ---
 
-# Pure Tamil & Simple Sentence Instructions
 KIDS_AI_INSTRUCTIONS = """You are a Kindergarten Tamil Teacher. 
 1. Use ONLY Pure Tamil words. Never use English words written in Tamil (e.g., use 'உடல்', NOT 'பாடி').
-2. MANDATORY: The sentence MUST include ALL the words provided in the pair/triplet.
+2. MANDATORY: The sentence MUST include ALL the words provided in the list.
 3. SIMPLICITY: Sentences must be 3 to 5 words long. Use basic Subject-Object-Verb structure.
-4. Categories: Mix categories (e.g., Animal + Fruit) to make it interesting."""
+4. STRICT RULE: DO NOT include any unrelated English words (like 'fire', 'fan', 'apple') at the end of your response. Only return the requested format.
+"""
 
 def get_ai_pairing(valid_names):
-    """Fetches creative cross-category pairings and a suggested sentence."""
+    """Fetches creative pairings and a simplified Tamil sentence."""
     if len(valid_names) < 2: return None
     sample = random.sample(valid_names, min(len(valid_names), 50))
     
@@ -79,19 +79,26 @@ def get_ai_pairing(valid_names):
     
     try:
         response = client.chat.completions.create(
-            model="gpt-4o", # Upgraded to gpt-4o for better constraint following
+            model="gpt-4o", 
             messages=[{"role": "system", "content": KIDS_AI_INSTRUCTIONS},
                       {"role": "user", "content": prompt}],
-            timeout=15
+            timeout=15,
+            temperature=0.3
         )
-        content = response.choices[0].message.content
-        parts = content.split("|")
-        words = [w.strip().lower() for w in parts[0].split(",")]
-        sentence = parts[1].strip() if len(parts) > 1 else ""
+        content = response.choices[0].message.content.strip()
         
-        confirmed_words = [w for w in words if w in valid_names]
-        if len(confirmed_words) >= 2:
-            return confirmed_words, sentence
+        if "|" in content:
+            # Logic to strip hallucinations like 'fire' or 'fan'
+            parts = content.split("|")
+            words_raw = parts[0].strip()
+            # Split by newline to ensure we only get the sentence and not trailing garbage
+            sentence_part = parts[1].split('\n')[0].strip()
+            
+            words = [w.strip().lower() for w in words_raw.split(",")]
+            confirmed_words = [w for w in words if w in valid_names]
+            
+            if len(confirmed_words) >= 2:
+                return confirmed_words, sentence_part
         return None
     except Exception as e:
         logging.error(f"AI Pairing Error: {e}")
@@ -107,15 +114,20 @@ def generate_all_combinations(word_list):
     progress_bar = st.progress(0, text="Generating 1000+ Simple Pure Tamil Combinations...")
     
     for i, chunk in enumerate(chunks):
-        prompt = f"Words: {chunk}. Create as many simple cross-category pairs as possible. Every sentence MUST use BOTH words and be very simple (3-5 words). Format: Word1, Word2 | Sentence"
+        prompt = f"Words: {chunk}. Create as many simple cross-category pairs as possible. Every sentence MUST use BOTH words and be very simple (3-5 words). Format: Word1, Word2 | Sentence. DO NOT add words like fire/fan."
         try:
             response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[{"role": "system", "content": KIDS_AI_INSTRUCTIONS},
-                          {"role": "user", "content": prompt}]
+                          {"role": "user", "content": prompt}],
+                temperature=0.3
             )
-            lines = response.choices[0].message.content.strip().split('\n')
-            all_results.extend([line for line in lines if "|" in line])
+            raw_lines = response.choices[0].message.content.strip().split('\n')
+            for line in raw_lines:
+                if "|" in line:
+                    # Clean the line from any trailing hallucinated words
+                    clean_line = line.strip()
+                    all_results.append(clean_line)
         except: continue
         progress_bar.progress((i + 1) / len(chunks))
     
@@ -151,7 +163,7 @@ with st.sidebar:
 # --- PAGE: COMBINATIONS LIST ---
 if st.session_state.view_mode == "Combinations":
     st.title("📚 Teachers' Simple Sentence Guide")
-    st.write("Comprehensive list of Pure Tamil simple sentences (3-5 words) using your library.")
+    st.write("Comprehensive guide of Pure Tamil simple sentences (3-5 words) using your image library.")
     
     if st.button("🔄 Refresh / Regenerate List"):
         st.cache_data.clear()
