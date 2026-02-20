@@ -33,12 +33,13 @@ st.markdown("""
             background-color: #f0f9f0;
             border-left: 10px solid #2E7D32;
             padding: 20px;
-            font-size: 28px !important;
+            font-size: 32px !important;
             font-weight: bold;
             text-align: center;
             border-radius: 10px;
             margin: 20px 0;
             color: #1b5e20;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
         }
     </style>
 """, unsafe_allow_html=True)
@@ -60,34 +61,34 @@ def check_password():
 if not check_password():
     st.stop()
 
-# --- 3. CORE LOGIC & AI ---
+# --- 3. CORE LOGIC & AI (ENHANCED) ---
+
+# Pure Tamil & Simple Sentence Instructions
+KIDS_AI_INSTRUCTIONS = """You are a Kindergarten Tamil Teacher. 
+1. Use ONLY Pure Tamil words. Never use English words written in Tamil (e.g., use 'உடல்', NOT 'பாடி').
+2. MANDATORY: The sentence MUST include ALL the words provided in the pair/triplet.
+3. SIMPLICITY: Sentences must be 3 to 5 words long. Use basic Subject-Object-Verb structure.
+4. Categories: Mix categories (e.g., Animal + Fruit) to make it interesting."""
 
 def get_ai_pairing(valid_names):
     """Fetches creative cross-category pairings and a suggested sentence."""
     if len(valid_names) < 2: return None
-    # Sample a larger set to allow cross-category creativity
     sample = random.sample(valid_names, min(len(valid_names), 50))
     
-    prompt = f"""
-    Using this vocabulary: {sample}
-    1. Pick 2 or 3 words that connect creatively (e.g., 'Elephant' + 'Water', 'Apple' + 'Hand').
-    2. Words should ideally come from different categories.
-    3. Provide a simple Tamil sentence using these words for kids.
-    Format your response EXACTLY like this: word1, word2 | Tamil Sentence
-    """
+    prompt = f"Vocabulary: {sample}. Pick 2 or 3 words and form a VERY SIMPLE Pure Tamil sentence using ALL of them. Format: word1, word2 | Tamil Sentence"
+    
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "system", "content": "You are a creative Tamil teacher. Mix categories. Output format: word1, word2 | sentence"},
+            model="gpt-4o", # Upgraded to gpt-4o for better constraint following
+            messages=[{"role": "system", "content": KIDS_AI_INSTRUCTIONS},
                       {"role": "user", "content": prompt}],
-            timeout=10
+            timeout=15
         )
         content = response.choices[0].message.content
         parts = content.split("|")
         words = [w.strip().lower() for w in parts[0].split(",")]
         sentence = parts[1].strip() if len(parts) > 1 else ""
         
-        # Ensure all chosen words actually exist in our images
         confirmed_words = [w for w in words if w in valid_names]
         if len(confirmed_words) >= 2:
             return confirmed_words, sentence
@@ -98,19 +99,19 @@ def get_ai_pairing(valid_names):
 
 @st.cache_data
 def generate_all_combinations(word_list):
-    """Generates the full comprehensive list of all possible cross-category connections."""
+    """Generates a massive comprehensive list of cross-category connections."""
     all_results = []
-    chunk_size = 40 
+    chunk_size = 30 
     chunks = [word_list[i:i + chunk_size] for i in range(0, len(word_list), chunk_size)]
     
-    progress_bar = st.progress(0, text="Building the complete Word Connection Guide...")
+    progress_bar = st.progress(0, text="Generating 1000+ Simple Pure Tamil Combinations...")
     
     for i, chunk in enumerate(chunks):
-        prompt = f"Words: {chunk}. Create as many logical cross-category pairs or triplets as possible. Provide a Tamil sentence for each. Format: Word1, Word2 | Sentence"
+        prompt = f"Words: {chunk}. Create as many simple cross-category pairs as possible. Every sentence MUST use BOTH words and be very simple (3-5 words). Format: Word1, Word2 | Sentence"
         try:
             response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "system", "content": "Return pipe-separated values only: word, word | sentence"},
+                model="gpt-4o",
+                messages=[{"role": "system", "content": KIDS_AI_INSTRUCTIONS},
                           {"role": "user", "content": prompt}]
             )
             lines = response.choices[0].message.content.strip().split('\n')
@@ -141,7 +142,7 @@ with st.sidebar:
     if st.button("🚀 Practice Game", use_container_width=True):
         st.session_state.view_mode = "Practice"
         st.rerun()
-    if st.button("📚 All Combinations List", use_container_width=True):
+    if st.button("📚 Teacher's Guide (All Pairs)", use_container_width=True):
         st.session_state.view_mode = "Combinations"
         st.rerun()
     st.divider()
@@ -149,8 +150,8 @@ with st.sidebar:
 
 # --- PAGE: COMBINATIONS LIST ---
 if st.session_state.view_mode == "Combinations":
-    st.title("📚 Comprehensive Word Connection Guide")
-    st.write("Below are all possible logical combinations and suggested sentences for your 400+ words.")
+    st.title("📚 Teachers' Simple Sentence Guide")
+    st.write("Comprehensive list of Pure Tamil simple sentences (3-5 words) using your library.")
     
     if st.button("🔄 Refresh / Regenerate List"):
         st.cache_data.clear()
@@ -161,13 +162,14 @@ if st.session_state.view_mode == "Combinations":
     for p in raw_pairs:
         parts = p.split("|")
         if len(parts) == 2:
-            parsed.append({"Words Used": parts[0].strip().upper(), "Suggested Tamil Sentence": parts[1].strip()})
+            parsed.append({"Vocabulary Pair": parts[0].strip().upper(), "Simple Tamil Sentence": parts[1].strip()})
     
     df = pd.DataFrame(parsed)
-    st.table(df) # Better for rendering Tamil text clearly
+    st.dataframe(df, use_container_width=True, height=700)
+    st.download_button("📥 Download as CSV", df.to_csv(index=False), "Tamil_Theni_Guide.csv")
     st.stop()
 
-# --- PAGE: PRACTICE GAME (Your Existing Logic Improved) ---
+# --- PAGE: PRACTICE GAME ---
 if "running" not in st.session_state: st.session_state.running = False
 if "pair_count" not in st.session_state: st.session_state.pair_count = 0
 if "current_pair" not in st.session_state: st.session_state.current_pair = None
@@ -187,7 +189,7 @@ else:
         st.rerun()
 
     if st.session_state.current_pair is None:
-        with st.spinner("AI is forming a creative connection..."):
+        with st.spinner("AI is thinking of a simple connection..."):
             result = get_ai_pairing(valid_names)
             if result:
                 st.session_state.current_pair, st.session_state.current_sentence = result
@@ -196,10 +198,9 @@ else:
     else:
         words = st.session_state.current_pair
         
-        # Display suggested sentence
+        # Display simplified sentence box
         st.markdown(f"<div class='tamil-sentence-box'>{st.session_state.current_sentence}</div>", unsafe_allow_html=True)
         
-        # Display Images (Handles 2 or 3 images automatically)
         cols = st.columns(len(words))
         for idx, w in enumerate(words):
             img_path = os.path.join(IMAGE_PATH, image_map[w])
