@@ -17,29 +17,38 @@ APP_PASSWORD = st.secrets["STREAMLIT_PASSWORD"]
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 IMAGE_PATH = "images" 
-EXCEL_FILE_NAME = "TT2026-Word-List-Theni-1_2_3_4 conv.xlsx"
-
 st.set_page_config(page_title="Tamil Theni - Level 2", page_icon="🐘", layout="wide")
 
-# Custom CSS for clear Tamil fonts and sentence styling
+# Custom CSS for UI layout
 st.markdown("""
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;700&display=swap');
         body, h1, h2, h3, p, div {
             font-family: 'Noto Sans Tamil', sans-serif !important;
-            color: #333;
+        }
+        .timer-header {
+            text-align: center;
+            font-size: 26px;
+            font-weight: bold;
+            color: #d32f2f;
+            background-color: #fff5f5;
+            padding: 10px;
+            border-radius: 50px;
+            width: 300px;
+            margin: 0 auto 20px auto;
+            border: 2px solid #ffcdd2;
         }
         .tamil-sentence-box {
             background-color: #f0f9f0;
             border-left: 10px solid #2E7D32;
-            padding: 20px;
-            font-size: 32px !important;
+            padding: 25px;
+            font-size: 36px !important;
             font-weight: bold;
             text-align: center;
-            border-radius: 10px;
-            margin: 20px 0;
+            border-radius: 15px;
+            margin-bottom: 30px;
             color: #1b5e20;
-            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
     </style>
 """, unsafe_allow_html=True)
@@ -61,170 +70,123 @@ def check_password():
 if not check_password():
     st.stop()
 
-# --- 3. CORE LOGIC & AI INSTRUCTIONS ---
-
+# --- 3. AI LOGIC & INSTRUCTIONS ---
 KIDS_AI_INSTRUCTIONS = """You are a Kindergarten Tamil Teacher. 
-1. Use ONLY Pure Tamil words. Never use English words written in Tamil (e.g., use 'உடல்', NOT 'பாடி').
-2. MANDATORY: The sentence MUST include ALL the words provided in the list.
-3. SIMPLICITY: Sentences must be 3 to 5 words long. Use basic Subject-Object-Verb structure.
-4. STRICT RULE: DO NOT include any unrelated English words (like 'fire', 'fan', 'apple') at the end of your response. Only return the requested format.
-"""
+1. Use ONLY Pure Tamil words (e.g., 'உடல்' not 'பாடி').
+2. MANDATORY: The sentence MUST include ALL provided words.
+3. SIMPLICITY: Use ONLY 3-5 words in Subject-Object-Verb structure.
+4. STRICT: No unrelated words (like fire, fan, apple) at the end. Only the sentence."""
 
 def get_ai_pairing(valid_names):
-    """Fetches creative pairings and a simplified Tamil sentence."""
     if len(valid_names) < 2: return None
     sample = random.sample(valid_names, min(len(valid_names), 50))
-    
-    prompt = f"Vocabulary: {sample}. Pick 2 or 3 words and form a VERY SIMPLE Pure Tamil sentence using ALL of them. Format: word1, word2 | Tamil Sentence"
-    
+    prompt = f"Words: {sample}. Pick 2 words. Format: word1, word2 | Simple Tamil Sentence"
     try:
         response = client.chat.completions.create(
             model="gpt-4o", 
-            messages=[{"role": "system", "content": KIDS_AI_INSTRUCTIONS},
-                      {"role": "user", "content": prompt}],
-            timeout=15,
+            messages=[{"role": "system", "content": KIDS_AI_INSTRUCTIONS}, {"role": "user", "content": prompt}],
             temperature=0.3
         )
         content = response.choices[0].message.content.strip()
-        
         if "|" in content:
-            # Logic to strip hallucinations like 'fire' or 'fan'
             parts = content.split("|")
-            words_raw = parts[0].strip()
-            # Split by newline to ensure we only get the sentence and not trailing garbage
-            sentence_part = parts[1].split('\n')[0].strip()
-            
-            words = [w.strip().lower() for w in words_raw.split(",")]
-            confirmed_words = [w for w in words if w in valid_names]
-            
-            if len(confirmed_words) >= 2:
-                return confirmed_words, sentence_part
-        return None
-    except Exception as e:
-        logging.error(f"AI Pairing Error: {e}")
-        return None
+            words = [w.strip().lower() for w in parts[0].split(",")]
+            sentence = parts[1].split('\n')[0].strip()
+            return words, sentence
+    except: return None
 
 @st.cache_data
 def generate_all_combinations(word_list):
-    """Generates a massive comprehensive list of cross-category connections."""
     all_results = []
-    chunk_size = 30 
-    chunks = [word_list[i:i + chunk_size] for i in range(0, len(word_list), chunk_size)]
-    
-    progress_bar = st.progress(0, text="Generating 1000+ Simple Pure Tamil Combinations...")
-    
-    for i, chunk in enumerate(chunks):
-        prompt = f"Words: {chunk}. Create as many simple cross-category pairs as possible. Every sentence MUST use BOTH words and be very simple (3-5 words). Format: Word1, Word2 | Sentence. DO NOT add words like fire/fan."
+    chunk_size = 30
+    progress_bar = st.progress(0, text="Generating All Possible Combinations...")
+    for i in range(0, len(word_list), chunk_size):
+        chunk = word_list[i:i + chunk_size]
+        prompt = f"Words: {chunk}. Create all logical pairs. Format: Word1, Word2 | Sentence."
         try:
             response = client.chat.completions.create(
                 model="gpt-4o",
-                messages=[{"role": "system", "content": KIDS_AI_INSTRUCTIONS},
-                          {"role": "user", "content": prompt}],
+                messages=[{"role": "system", "content": KIDS_AI_INSTRUCTIONS}, {"role": "user", "content": prompt}],
                 temperature=0.3
             )
-            raw_lines = response.choices[0].message.content.strip().split('\n')
-            for line in raw_lines:
-                if "|" in line:
-                    # Clean the line from any trailing hallucinated words
-                    clean_line = line.strip()
-                    all_results.append(clean_line)
+            all_results.extend([l for l in response.choices[0].message.content.strip().split('\n') if "|" in l])
         except: continue
-        progress_bar.progress((i + 1) / len(chunks))
-    
+        progress_bar.progress(min((i + chunk_size) / len(word_list), 1.0))
     progress_bar.empty()
     return all_results
 
-# --- 4. IMAGE DATA LOADING ---
+# --- 4. IMAGE LOADING ---
 image_map = {}
 if os.path.exists(IMAGE_PATH):
     for root, _, files in os.walk(IMAGE_PATH):
         for f in files:
             if f.lower().endswith(('.png', '.jpg', '.jpeg')):
-                base_name = os.path.splitext(f)[0].strip().lower()
-                image_map[base_name] = os.path.relpath(os.path.join(root, f), IMAGE_PATH)
-
+                image_map[os.path.splitext(f)[0].strip().lower()] = os.path.relpath(os.path.join(root, f), IMAGE_PATH)
 valid_names = sorted(list(image_map.keys()))
 
-# --- 5. UI NAVIGATION STATE ---
-if "view_mode" not in st.session_state:
-    st.session_state.view_mode = "Practice"
+# --- 5. UI NAVIGATION ---
+if "view_mode" not in st.session_state: st.session_state.view_mode = "Practice"
 
 with st.sidebar:
     st.title("🐘 Tamil Theni Control")
-    if st.button("🚀 Practice Game", use_container_width=True):
+    if st.button("🚀 Practice Game", use_container_width=True): 
         st.session_state.view_mode = "Practice"
         st.rerun()
-    if st.button("📚 Teacher's Guide (All Pairs)", use_container_width=True):
+    if st.button("📚 Teacher's Guide", use_container_width=True): 
         st.session_state.view_mode = "Combinations"
         st.rerun()
     st.divider()
-    st.write(f"Total Images: {len(valid_names)}")
+    st.info(f"Library: {len(valid_names)} Images")
 
 # --- PAGE: COMBINATIONS LIST ---
 if st.session_state.view_mode == "Combinations":
-    st.title("📚 Teachers' Simple Sentence Guide")
-    st.write("Comprehensive guide of Pure Tamil simple sentences (3-5 words) using your image library.")
-    
-    if st.button("🔄 Refresh / Regenerate List"):
+    st.title("📚 Teachers' Master Curriculum")
+    if st.button("🔄 Regenerate All"):
         st.cache_data.clear()
         st.rerun()
-
     raw_pairs = generate_all_combinations(valid_names)
-    parsed = []
-    for p in raw_pairs:
-        parts = p.split("|")
-        if len(parts) == 2:
-            parsed.append({"Vocabulary Pair": parts[0].strip().upper(), "Simple Tamil Sentence": parts[1].strip()})
-    
-    df = pd.DataFrame(parsed)
+    df = pd.DataFrame([{"Words": p.split("|")[0].upper(), "Sentence": p.split("|")[1]} for p in raw_pairs if "|" in p])
     st.dataframe(df, use_container_width=True, height=700)
-    st.download_button("📥 Download as CSV", df.to_csv(index=False), "Tamil_Theni_Guide.csv")
     st.stop()
 
 # --- PAGE: PRACTICE GAME ---
 if "running" not in st.session_state: st.session_state.running = False
-if "pair_count" not in st.session_state: st.session_state.pair_count = 0
 if "current_pair" not in st.session_state: st.session_state.current_pair = None
-if "current_sentence" not in st.session_state: st.session_state.current_sentence = ""
-if "display_start_time" not in st.session_state: st.session_state.display_start_time = None
 
 if not st.session_state.running:
     st.title("🐘 Tamil Theni - Level 2")
-    if st.button("🚀 Start Practice"):
+    if st.button("🚀 Start Unlimited Practice"):
         st.session_state.running = True
-        st.session_state.pair_count = 0
+        st.session_state.current_pair = None
         st.rerun()
 else:
-    if st.session_state.pair_count >= 20:
-        st.success("Practice Session Complete!")
-        st.session_state.running = False
-        st.rerun()
+    # 1. Timer Displayed at the very Top
+    if st.session_state.current_pair:
+        elapsed = time.time() - st.session_state.display_start_time
+        remaining = max(0, 15 - int(elapsed))
+        st.markdown(f"<div class='timer-header'>Next set in: {remaining}s</div>", unsafe_allow_html=True)
 
     if st.session_state.current_pair is None:
-        with st.spinner("AI is thinking of a simple connection..."):
+        with st.spinner("AI is forming a connection..."):
             result = get_ai_pairing(valid_names)
             if result:
                 st.session_state.current_pair, st.session_state.current_sentence = result
                 st.session_state.display_start_time = time.time()
                 st.rerun()
     else:
-        words = st.session_state.current_pair
-        
-        # Display simplified sentence box
+        # 2. Main Practice UI
         st.markdown(f"<div class='tamil-sentence-box'>{st.session_state.current_sentence}</div>", unsafe_allow_html=True)
         
+        words = st.session_state.current_pair
         cols = st.columns(len(words))
         for idx, w in enumerate(words):
-            img_path = os.path.join(IMAGE_PATH, image_map[w])
-            with open(img_path, "rb") as f:
-                cols[idx].image(f.read(), caption=w.upper(), use_container_width=True)
+            if w in image_map:
+                img_path = os.path.join(IMAGE_PATH, image_map[w])
+                with open(img_path, "rb") as f:
+                    cols[idx].image(f.read(), caption=w.upper(), use_container_width=True)
         
-        elapsed = time.time() - st.session_state.display_start_time
-        remaining = max(0, 15 - int(elapsed))
-        st.write(f"Next set in: {remaining}s")
-        
+        # 3. Refresh Logic
         if elapsed >= 15:
-            st.session_state.pair_count += 1
             st.session_state.current_pair = None
             st.rerun()
         else:
