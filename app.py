@@ -71,26 +71,27 @@ def check_password():
 if not check_password():
     st.stop()
 
-# --- 3. CORE LOGIC & AI INSTRUCTIONS ---
+# --- 3. CORE LOGIC & AI INSTRUCTIONS (REFINED FOR MEANINGFULNESS) ---
 
 KIDS_AI_INSTRUCTIONS = """You are a Kindergarten Tamil Teacher. 
-1. Use ONLY Pure Tamil words. Never use English words written in Tamil (e.g., use 'உடல்', NOT 'பாடி').
-2. MANDATORY: The sentence MUST include ALL the words provided in the list.
-3. SIMPLICITY: Sentences must be 3 to 5 words long. Use basic Subject-Object-Verb structure.
-4. STRICT RULE: DO NOT include any unrelated English words (like 'fire', 'fan', 'apple') at the end. Only return the requested format.
+1. LOGIC: Form sentences that make REAL-WORLD SENSE. (e.g., 'யானை தண்ணீர் குடித்தது' is good. 'யானை ஆப்பிள் மரம் ஏறியது' is bad logic).
+2. PURE TAMIL: Use only pure Tamil words. No English words in Tamil script.
+3. MANDATORY: The sentence MUST include all words provided in the list.
+4. SIMPLICITY: Keep it to 3-5 words in Subject-Object-Verb (SOV) structure.
+5. NO EXTRA TEXT: Return ONLY 'word1, word2 | Tamil Sentence'. No extra words at the end.
 """
 
 def get_ai_pairing(valid_names):
     if len(valid_names) < 2: return None
-    sample = random.sample(valid_names, min(len(valid_names), 50))
-    prompt = f"Vocabulary: {sample}. Pick 2 or 3 words and form a VERY SIMPLE Pure Tamil sentence using ALL of them. Format: word1, word2 | Tamil Sentence"
+    sample = random.sample(valid_names, min(len(valid_names), 60))
+    prompt = f"Vocabulary: {sample}. Select 2 words that have a logical real-world connection and write a simple meaningful Tamil sentence. Format: word1, word2 | Tamil Sentence"
     try:
         response = client.chat.completions.create(
             model="gpt-4o", 
             messages=[{"role": "system", "content": KIDS_AI_INSTRUCTIONS},
                       {"role": "user", "content": prompt}],
             timeout=15,
-            temperature=0.3
+            temperature=0.1 # Lowered temperature for stricter logic and less randomness
         )
         content = response.choices[0].message.content.strip()
         if "|" in content:
@@ -111,15 +112,15 @@ def generate_all_combinations(word_list):
     all_results = []
     chunk_size = 30 
     chunks = [word_list[i:i + chunk_size] for i in range(0, len(word_list), chunk_size)]
-    progress_bar = st.progress(0, text="Generating Combinations...")
+    progress_bar = st.progress(0, text="Generating Logical Combinations...")
     for i, chunk in enumerate(chunks):
-        prompt = f"Words: {chunk}. Create simple pairs. Format: Word1, Word2 | Sentence."
+        prompt = f"Words: {chunk}. Create simple LOGICAL pairs with meaningful sentences. Format: Word1, Word2 | Sentence."
         try:
             response = client.chat.completions.create(
                 model="gpt-4o",
                 messages=[{"role": "system", "content": KIDS_AI_INSTRUCTIONS},
                           {"role": "user", "content": prompt}],
-                temperature=0.3
+                temperature=0.1
             )
             raw_lines = response.choices[0].message.content.strip().split('\n')
             all_results.extend([line.strip() for line in raw_lines if "|" in line])
@@ -156,7 +157,7 @@ with st.sidebar:
 
 # --- PAGE: COMBINATIONS LIST ---
 if st.session_state.view_mode == "Combinations":
-    st.title("📚 Teachers' Simple Sentence Guide")
+    st.title("📚 Teachers' Meaningful Sentence Guide")
     if st.button("🔄 Regenerate List"):
         st.cache_data.clear()
         st.rerun()
@@ -193,24 +194,23 @@ else:
 
     # 2. Game Display
     if st.session_state.current_pair is None:
-        with st.spinner("Preparing next set..."):
+        with st.spinner("Finding logical connection..."):
             result = get_ai_pairing(valid_names)
             if result:
                 st.session_state.current_pair, st.session_state.current_sentence = result
                 st.session_state.display_start_time = time.time()
                 st.rerun()
     else:
-        # Display simplified sentence box (Bigger font for kids)
+        # Display meaningful sentence
         st.markdown(f"<div class='tamil-sentence-box'>{st.session_state.current_sentence}</div>", unsafe_allow_html=True)
         
-        # Display Images ONLY (No captions, no vocabulary text)
+        # Display Images ONLY
         words = st.session_state.current_pair
         cols = st.columns(len(words))
         for idx, w in enumerate(words):
             if w in image_map:
                 img_path = os.path.join(IMAGE_PATH, image_map[w])
                 with open(img_path, "rb") as f:
-                    # caption parameter is removed to hide text below image
                     cols[idx].image(f.read(), use_container_width=True)
         
         time.sleep(1)
