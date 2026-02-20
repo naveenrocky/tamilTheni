@@ -84,7 +84,7 @@ KIDS_AI_INSTRUCTIONS = """You are a Kindergarten Tamil Teacher.
 1. LOGIC: Form sentences that make REAL-WORLD SENSE and are meaningful.
 2. PURE TAMIL: Use only pure Tamil words. 
 3. MANDATORY: The sentence MUST include all words provided in the list.
-4. SIMPLICITY: Keep it to 5-7 words in Subject-Object-Verb (SOV) structure.
+4. SIMPLICITY: Keep it less than 7 words in Subject-Object-Verb (SOV) structure.
 5. NO EXTRA TEXT: Return ONLY 'word1, word2 | Tamil Sentence'. No extra English words like fire, fan at the end.
 """
 
