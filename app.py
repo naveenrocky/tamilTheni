@@ -115,13 +115,17 @@ def generate_all_combinations(word_list):
     progress_bar.empty()
     return all_results
 
-# --- 4. IMAGE LOADING ---
+# --- 4. IMAGE LOADING (FIXED & RESTORED) ---
 image_map = {}
 if os.path.exists(IMAGE_PATH):
-    for root, _, files in os.walk(IMAGE_PATH):
+    for root, dirs, files in os.walk(IMAGE_PATH):
         for f in files:
             if f.lower().endswith(('.png', '.jpg', '.jpeg')):
-                image_map[os.path.splitext(f)[0].strip().lower()] = os.path.relpath(os.path.join(root, f), IMAGE_PATH)
+                # Store the key as the lowercase filename without extension
+                name_key = os.path.splitext(f)[0].strip().lower()
+                # Store the full path relative to IMAGE_PATH
+                image_map[name_key] = os.path.join(root, f)
+
 valid_names = sorted(list(image_map.keys()))
 
 # --- 5. UI NAVIGATION ---
@@ -160,7 +164,7 @@ if not st.session_state.running:
         st.session_state.current_pair = None
         st.rerun()
 else:
-    # 1. Timer Displayed at the very Top
+    # 1. Timer Displayed at the Top
     if st.session_state.current_pair:
         elapsed = time.time() - st.session_state.display_start_time
         remaining = max(0, 15 - int(elapsed))
@@ -181,11 +185,16 @@ else:
         cols = st.columns(len(words))
         for idx, w in enumerate(words):
             if w in image_map:
-                img_path = os.path.join(IMAGE_PATH, image_map[w])
-                with open(img_path, "rb") as f:
-                    cols[idx].image(f.read(), caption=w.upper(), use_container_width=True)
+                img_path = image_map[w] # This now contains the full correct path
+                try:
+                    with open(img_path, "rb") as f:
+                        cols[idx].image(f.read(), caption=w.upper(), use_container_width=True)
+                except Exception as e:
+                    cols[idx].error(f"Error loading {w}")
+            else:
+                cols[idx].warning(f"Image not found: {w}")
         
-        # 3. Refresh Logic
+        # 3. Auto-Refresh Logic
         if elapsed >= 15:
             st.session_state.current_pair = None
             st.rerun()
