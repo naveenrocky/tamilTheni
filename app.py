@@ -51,6 +51,13 @@ st.markdown("""
             color: #1b5e20;
             box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
+        .image-caption {
+            text-align: center;
+            font-size: 22px;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-top: 5px;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -71,27 +78,27 @@ def check_password():
 if not check_password():
     st.stop()
 
-# --- 3. CORE LOGIC & AI INSTRUCTIONS (REFINED FOR MEANINGFULNESS) ---
+# --- 3. CORE LOGIC & AI INSTRUCTIONS ---
 
 KIDS_AI_INSTRUCTIONS = """You are a Kindergarten Tamil Teacher. 
-1. LOGIC: Form sentences that make REAL-WORLD SENSE. (e.g., 'யானை தண்ணீர் குடித்தது' is good. 'யானை ஆப்பிள் மரம் ஏறியது' is bad logic).
-2. PURE TAMIL: Use only pure Tamil words. No English words in Tamil script.
+1. LOGIC: Form sentences that make REAL-WORLD SENSE and are meaningful.
+2. PURE TAMIL: Use only pure Tamil words. 
 3. MANDATORY: The sentence MUST include all words provided in the list.
 4. SIMPLICITY: Keep it to 3-5 words in Subject-Object-Verb (SOV) structure.
-5. NO EXTRA TEXT: Return ONLY 'word1, word2 | Tamil Sentence'. No extra words at the end.
+5. NO EXTRA TEXT: Return ONLY 'word1, word2 | Tamil Sentence'. No extra English words like fire, fan at the end.
 """
 
 def get_ai_pairing(valid_names):
     if len(valid_names) < 2: return None
     sample = random.sample(valid_names, min(len(valid_names), 60))
-    prompt = f"Vocabulary: {sample}. Select 2 words that have a logical real-world connection and write a simple meaningful Tamil sentence. Format: word1, word2 | Tamil Sentence"
+    prompt = f"Vocabulary: {sample}. Select 2 words that have a logical connection and write a simple meaningful Tamil sentence. Format: word1, word2 | Tamil Sentence"
     try:
         response = client.chat.completions.create(
             model="gpt-4o", 
             messages=[{"role": "system", "content": KIDS_AI_INSTRUCTIONS},
                       {"role": "user", "content": prompt}],
             timeout=15,
-            temperature=0.1 # Lowered temperature for stricter logic and less randomness
+            temperature=0.1
         )
         content = response.choices[0].message.content.strip()
         if "|" in content:
@@ -114,7 +121,7 @@ def generate_all_combinations(word_list):
     chunks = [word_list[i:i + chunk_size] for i in range(0, len(word_list), chunk_size)]
     progress_bar = st.progress(0, text="Generating Logical Combinations...")
     for i, chunk in enumerate(chunks):
-        prompt = f"Words: {chunk}. Create simple LOGICAL pairs with meaningful sentences. Format: Word1, Word2 | Sentence."
+        prompt = f"Words: {chunk}. Create simple logical pairs. Format: Word1, Word2 | Sentence."
         try:
             response = client.chat.completions.create(
                 model="gpt-4o",
@@ -182,7 +189,7 @@ if not st.session_state.running:
         st.session_state.current_pair = None
         st.rerun()
 else:
-    # 1. Timer logic - TOP ONLY
+    # 1. Timer logic - Top Display
     if st.session_state.current_pair:
         elapsed = time.time() - st.session_state.display_start_time
         remaining = max(0, 15 - int(elapsed))
@@ -204,14 +211,15 @@ else:
         # Display meaningful sentence
         st.markdown(f"<div class='tamil-sentence-box'>{st.session_state.current_sentence}</div>", unsafe_allow_html=True)
         
-        # Display Images ONLY
+        # Display Images with English Words
         words = st.session_state.current_pair
         cols = st.columns(len(words))
         for idx, w in enumerate(words):
             if w in image_map:
                 img_path = os.path.join(IMAGE_PATH, image_map[w])
                 with open(img_path, "rb") as f:
-                    cols[idx].image(f.read(), use_container_width=True)
+                    # 'caption' added back to show the English word
+                    cols[idx].image(f.read(), caption=w.upper(), use_container_width=True)
         
         time.sleep(1)
         st.rerun()
