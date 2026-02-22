@@ -78,14 +78,15 @@ def check_password():
 if not check_password():
     st.stop()
 
-# --- 3. CORE LOGIC & AI INSTRUCTIONS ---
+# --- 3. CORE LOGIC & AI INSTRUCTIONS (UPDATED FOR LOGIC) ---
 
 KIDS_AI_INSTRUCTIONS = """You are a Kindergarten Tamil Teacher. 
-1. LOGIC: Form sentences that make REAL-WORLD SENSE and are meaningful.
-2. PURE TAMIL: Use only pure Tamil words. 
-3. MANDATORY: The sentence MUST include all words provided in the list.
-4. SIMPLICITY: Keep it less than 7 words in Subject-Object-Verb (SOV) structure.
-5. NO EXTRA TEXT: Return ONLY 'word1, word2 | Tamil Sentence'. No extra English words like fire, fan at the end.
+1. LOGIC PRIORITY: Sentences MUST make 100% real-world sense. Do NOT write nonsense like 'an apple read a book' or 'age got an award'.
+2. TRICK FOR UNRELATED WORDS: If two words are difficult to connect directly (like 'age' and 'award'), introduce a human subject (like 'சிறுவன்' [boy], 'பெண்' [girl], or 'மாணவன்' [student]) to connect them logically. Example: "அந்த வயது சிறுவன் விருது பெற்றான்" (That age boy got an award).
+3. PURE TAMIL: Use only pure Tamil words. 
+4. MANDATORY: The sentence MUST include all words provided in the list.
+5. SIMPLICITY: Keep it less than 7 words in Subject-Object-Verb (SOV) structure.
+6. NO EXTRA TEXT: Return ONLY 'word1, word2 | Tamil Sentence'. No extra English words like fire, fan at the end.
 """
 
 @st.cache_data
@@ -98,8 +99,8 @@ def generate_all_combinations(word_list):
     progress_bar = st.progress(0, text="Generating Master Curriculum... Please wait.")
     
     for i, chunk in enumerate(chunks):
-        # Stricter prompt to force usage of EVERY word in the chunk
-        prompt = f"Words: {chunk}. Create simple logical pairs. You MUST use EVERY word in this list at least once. Format: Word1, Word2 | Sentence."
+        # Stricter prompt to force usage of EVERY word while maintaining logic
+        prompt = f"Words: {chunk}. Group these words into logical pairs and write a meaningful sentence for each pair. You MUST use EVERY word from the list at least once. Remember to use helper words (like boy/girl) if two words don't naturally fit together. Format: Word1, Word2 | Sentence."
         try:
             response = client.chat.completions.create(
                 model="gpt-4o",
